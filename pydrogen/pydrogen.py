@@ -15,6 +15,11 @@
 ## ...
 ##
 
-pass
+import ast     # For Python abstract syntax trees.
+import inspect # To retrieve a function body source.
+import sympy   # For symbolic polynomials and other expressions.
+
+def __function(name):
+    return ast.parse(inspect.getsource(name))
 
 ##eof
