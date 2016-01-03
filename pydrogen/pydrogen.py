@@ -38,6 +38,10 @@ class SemanticError(Exception):
 # semantics or abstract interpretation for abstract syntax trees,
 # and then used as a decorator that is applied to functions that
 # must be processed using that alternative semantics/interpretation.
+#
+# The cases are derived directly from the Python abstract syntax
+# definition (https://docs.python.org/3/library/ast.html), with a
+# few deviations to accommodate the usage model for this library.
 class Pydrogen():
     def __new__(cls, func = None):
         # Either create a new object of this class in order to
@@ -59,6 +63,10 @@ class Pydrogen():
             return self.Module(self.Statements([self.interpret(s) for s in a.body]))
         elif type(a) == ast.FunctionDef:
             return self.FunctionDef(self.Statements([self.interpret(s) for s in a.body]))
+        elif type(a) == ast.Return:
+            return self.Return(self.interpret(a.value))
+        elif type(a) == ast.Assign:
+            return self.Assign(targets, self.interpret(a.value)) 
         elif type(a) == ast.For:
             return\
                 self.For(\
@@ -66,27 +74,60 @@ class Pydrogen():
                     self.Statements([self.interpret(s) for s in a.body]),\
                     self.Statements([self.interpret(s) for s in a.orelse])\
                 )
-        elif type(a) == ast.Return:
-            return self.Return(self.interpret(a.value))
+        elif type(a) == ast.While:
+            return\
+                self.While(\
+                    a.test,\
+                    self.Statements([self.interpret(s) for s in a.body]),\
+                    self.Statements([self.interpret(s) for s in a.orelse])\
+                )
+        elif type(a) == ast.If:
+            return\
+                self.If(\
+                    a.test,\
+                    self.Statements([self.interpret(s) for s in a.body]),\
+                    self.Statements([self.interpret(s) for s in a.orelse])\
+                )
         elif type(a) == ast.Expr:
             return self.interpret(a.value)
+        elif type(a) == ast.Pass:
+            return self.Pass()
+        elif type(a) == ast.Break:
+            return self.Break()
+        elif type(a) == ast.Continue:
+            return self.Continue()
+        elif type(a) == ast.Set:
+            return self.Set([self.interpret(e) for e in a.elts])
         elif type(a) == ast.Call:
             return self.Call(a.func, [self.interpret(e) for e in a.args])
         elif type(a) == ast.Num:
             return self.Num(a.n)
+        elif type(a) == ast.Str:
+            return self.Str(a.s)
+        elif type(a) == ast.Bytes:
+            return self.Bytes(a.s)
+        elif type(a) == ast.List:
+            return self.List([self.interpret(e) for e in a.elts])
+        elif type(a) == ast.Tuple:
+            return self.Tuple([self.interpret(e) for e in a.elts])
         else:
             raise PydrogenError("Pydrogen does not currently support nodes of this type: " + ast.dump(a))
 
     def Module(self, ss): raise SemanticError("Module")
     def FunctionDef(self, ss): raise SemanticError("FunctionDef")
     def Return(self, e): raise SemanticError("Return")
-    def Statements(self, ss): raise SemanticError("Statements")
-    def For(self, target, iter, body, orelse): raise SemanticError("For")
+    def Assign(self, targets, e): raise SemanticError("Assign")
+    def Statements(self, ss): raise SemanticError("Statements") # Special case.
+    def For(self, target, iter, ss, orelse): raise SemanticError("For")
+    def While(self, test, ss, orelse): raise SemanticError("While")
+    def If(self, test, ss, orelse): raise SemanticError("If")
+    def Set(self, es): raise SemanticError("Set")
     def Call(self, func, args): raise SemanticError("Call")
     def Num(self, n): raise SemanticError("Num")
-    def Str(): raise SemanticError("Str")
-    def Bytes(): raise SemanticError("Bytes")
-    def List(): raise SemanticError("List")
+    def Str(self, s): raise SemanticError("Str")
+    def Bytes(self, b): raise SemanticError("Bytes")
+    def List(self, es): raise SemanticError("List")
+    def Tuple(self, es): raise SemanticError("Tuple")
 
 # A simple example extension containing the typical definitions,
 # such as passing the recursive result up through 'Module' and
