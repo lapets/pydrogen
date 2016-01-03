@@ -98,6 +98,22 @@ class Pydrogen():
             return self.Continue()
         elif type(a) == ast.Set:
             return self.Set([self.interpret(e) for e in a.elts])
+        elif type(a) == ast.Compare:
+            if len(a.ops) == 1 and len(a.comparators) == 1:
+                op = a.ops[0]
+                right = a.comparators[0]
+                if type(op) == ast.Eq: return self.Eq(self.interpret(a.left), self.interpret(right))
+                if type(op) == ast.NotEq: return self.NotEq(self.interpret(a.left), self.interpret(right))
+                if type(op) == ast.Lt: return self.Lt(self.interpret(a.left), self.interpret(right))
+                if type(op) == ast.LtE: return self.LtE(self.interpret(a.left), self.interpret(right))
+                if type(op) == ast.Gt: return self.Gt(self.interpret(a.left), self.interpret(right))
+                if type(op) == ast.GtE: return self.GtE(self.interpret(a.left), self.interpret(right))
+                if type(op) == ast.Is: return self.Is(self.interpret(a.left), self.interpret(right))
+                if type(op) == ast.IsNot: return self.IsNot(self.interpret(a.left), self.interpret(right))
+                if type(op) == ast.In: return self.In(self.interpret(a.left), self.interpret(right))
+                if type(op) == ast.NotIn: return self.NotIn(self.interpret(a.left), self.interpret(right))
+            else:
+                raise PydrogenError("Pydrogen does not currently support expressions with chained comparison operations.")
         elif type(a) == ast.Call:
             return self.Call(a.func, [self.interpret(e) for e in a.args])
         elif type(a) == ast.Num:
@@ -171,6 +187,17 @@ class Pydrogen():
     def Not(self, e): raise SemanticError("Not")
     def UAdd(self, e): raise SemanticError("UAdd")
     def USub(self, e): raise SemanticError("USub")
+
+    def Eq(self, e1, e2): raise SemanticError("Eq")
+    def NotEq(self, e1, e2): raise SemanticError("NotEq")
+    def Lt(self, e1, e2): raise SemanticError("Lt")
+    def LtE(self, e1, e2): raise SemanticError("LtE")
+    def Gt(self, e1, e2): raise SemanticError("Gt")
+    def GtE(self, e1, e2): raise SemanticError("GtE")
+    def Is(self, e1, e2): raise SemanticError("Is")
+    def IsNot(self, e1, e2): raise SemanticError("IsNot")
+    def In(self, e1, e2): raise SemanticError("In")
+    def NotIn(self, e1, e2): raise SemanticError("NotIn")
 
 # A simple example extension containing the typical definitions,
 # such as passing the recursive result up through 'Module' and
