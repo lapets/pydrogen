@@ -110,6 +110,28 @@ class Pydrogen():
             return self.List([self.interpret(e) for e in a.elts])
         elif type(a) == ast.Tuple:
             return self.Tuple([self.interpret(e) for e in a.elts])
+        elif type(a) == ast.BoolOp:
+            if type(a.op) == ast.And: return self.And([self.interpret(e) for e in a.values])
+            if type(a.op) == ast.Or: return self.Or([self.interpret(e) for e in a.values])
+        elif type(a) == ast.BinOp:
+            if type(a.op) == ast.Add: return self.Add(self.interpret(a.left), self.interpret(a.right))
+            if type(a.op) == ast.Sub: return self.Sub(self.interpret(a.left), self.interpret(a.right))
+            if type(a.op) == ast.Mult: return self.Mult(self.interpret(a.left), self.interpret(a.right))
+            if type(a.op) == ast.MatMult: return self.MatMult(self.interpret(a.left), self.interpret(a.right))
+            if type(a.op) == ast.Div: return self.Div(self.interpret(a.left), self.interpret(a.right))
+            if type(a.op) == ast.Mod: return self.Mod(self.interpret(a.left), self.interpret(a.right))
+            if type(a.op) == ast.Pow: return self.Pow(self.interpret(a.left), self.interpret(a.right))
+            if type(a.op) == ast.LShift: return self.LShift(self.interpret(a.left), self.interpret(a.right))
+            if type(a.op) == ast.RShift: return self.RShift(self.interpret(a.left), self.interpret(a.right))
+            if type(a.op) == ast.BitOr: return self.BitOr(self.interpret(a.left), self.interpret(a.right))
+            if type(a.op) == ast.BitXor: return self.BitXor(self.interpret(a.left), self.interpret(a.right))
+            if type(a.op) == ast.BitAnd: return self.BitAnd(self.interpret(a.left), self.interpret(a.right))
+            if type(a.op) == ast.FloorDiv: return self.FloorDiv(self.interpret(a.left), self.interpret(a.right))
+        elif type(a) == ast.UnaryOp:
+            if type(a.op) == ast.Invert: return self.Invert(self.interpret(a.operand))
+            if type(a.op) == ast.Not: return self.Not(self.interpret(a.operand))
+            if type(a.op) == ast.UAdd: return self.UAdd(self.interpret(a.operand))
+            if type(a.op) == ast.USub: return self.USub(self.interpret(a.operand))
         else:
             raise PydrogenError("Pydrogen does not currently support nodes of this type: " + ast.dump(a))
 
@@ -121,6 +143,7 @@ class Pydrogen():
     def For(self, target, iter, ss, orelse): raise SemanticError("For")
     def While(self, test, ss, orelse): raise SemanticError("While")
     def If(self, test, ss, orelse): raise SemanticError("If")
+
     def Set(self, es): raise SemanticError("Set")
     def Call(self, func, args): raise SemanticError("Call")
     def Num(self, n): raise SemanticError("Num")
@@ -128,6 +151,26 @@ class Pydrogen():
     def Bytes(self, b): raise SemanticError("Bytes")
     def List(self, es): raise SemanticError("List")
     def Tuple(self, es): raise SemanticError("Tuple")
+
+    def And(self, e1, e2): raise SemanticError("And")
+    def Or(self, e1, e2): raise SemanticError("Or")
+    def Add(self, e1, e2): raise SemanticError("Add")
+    def Sub(self, e1, e2): raise SemanticError("Sub")
+    def Mult(self, e1, e2): raise SemanticError("Mult")
+    def MatMult(self, e1, e2): raise SemanticError("MatMult")
+    def Div(self, e1, e2): raise SemanticError("Div")
+    def Mod(self, e1, e2): raise SemanticError("Mod")
+    def Pow(self, e1, e2): raise SemanticError("Pow")
+    def LShift(self, e1, e2): raise SemanticError("LShift")
+    def RShift(self, e1, e2): raise SemanticError("RShift")
+    def BitOr(self, e1, e2): raise SemanticError("BitOr")
+    def BitXor(self, e1, e2): raise SemanticError("BixXor")
+    def BitAnd(self, e1, e2): raise SemanticError("BitAnd")
+    def FloorDiv(self, e1, e2): raise SemanticError("FloorDiv")
+    def Invert(self, e): raise SemanticError("Invert")
+    def Not(self, e): raise SemanticError("Not")
+    def UAdd(self, e): raise SemanticError("UAdd")
+    def USub(self, e): raise SemanticError("USub")
 
 # A simple example extension containing the typical definitions,
 # such as passing the recursive result up through 'Module' and
