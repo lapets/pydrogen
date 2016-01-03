@@ -96,22 +96,64 @@ class Pydrogen():
             return self.Break()
         elif type(a) == ast.Continue:
             return self.Continue()
+        elif type(a) == ast.BoolOp:
+            # Performance is not usually a serious issue in abstract interpretation
+            # and static analysis applications, so we use exceptions.
+            try:
+                if type(a.op) == ast.And: return self.And([self.interpret(e) for e in a.values])
+                if type(a.op) == ast.Or: return self.Or([self.interpret(e) for e in a.values])
+            except SemanticError: # Attempt catch-all definitions if above failed.
+                return self.BoolOp([self.interpret(e) for e in a.values])
+        elif type(a) == ast.BinOp:
+            # Performance is not usually a serious issue in abstract interpretation
+            # and static analysis applications, so we use exceptions.
+            try:
+                if type(a.op) == ast.Add: return self.Add(self.interpret(a.left), self.interpret(a.right))
+                if type(a.op) == ast.Sub: return self.Sub(self.interpret(a.left), self.interpret(a.right))
+                if type(a.op) == ast.Mult: return self.Mult(self.interpret(a.left), self.interpret(a.right))
+                if type(a.op) == ast.MatMult: return self.MatMult(self.interpret(a.left), self.interpret(a.right))
+                if type(a.op) == ast.Div: return self.Div(self.interpret(a.left), self.interpret(a.right))
+                if type(a.op) == ast.Mod: return self.Mod(self.interpret(a.left), self.interpret(a.right))
+                if type(a.op) == ast.Pow: return self.Pow(self.interpret(a.left), self.interpret(a.right))
+                if type(a.op) == ast.LShift: return self.LShift(self.interpret(a.left), self.interpret(a.right))
+                if type(a.op) == ast.RShift: return self.RShift(self.interpret(a.left), self.interpret(a.right))
+                if type(a.op) == ast.BitOr: return self.BitOr(self.interpret(a.left), self.interpret(a.right))
+                if type(a.op) == ast.BitXor: return self.BitXor(self.interpret(a.left), self.interpret(a.right))
+                if type(a.op) == ast.BitAnd: return self.BitAnd(self.interpret(a.left), self.interpret(a.right))
+                if type(a.op) == ast.FloorDiv: return self.FloorDiv(self.interpret(a.left), self.interpret(a.right))
+            except SemanticError: # Attempt catch-all definitions if above failed.
+                return self.BinOp(self.interpret(a.left), self.interpret(a.right))
+        elif type(a) == ast.UnaryOp:
+            # Performance is not usually a serious issue in abstract interpretation
+            # and static analysis applications, so we use exceptions.
+            try:
+                if type(a.op) == ast.Invert: return self.Invert(self.interpret(a.operand))
+                if type(a.op) == ast.Not: return self.Not(self.interpret(a.operand))
+                if type(a.op) == ast.UAdd: return self.UAdd(self.interpret(a.operand))
+                if type(a.op) == ast.USub: return self.USub(self.interpret(a.operand))
+            except SemanticError: # Attempt catch-all definitions if above failed.
+                return self.UnaryOp(self.interpret(a.operand))
         elif type(a) == ast.Set:
             return self.Set([self.interpret(e) for e in a.elts])
         elif type(a) == ast.Compare:
             if len(a.ops) == 1 and len(a.comparators) == 1:
                 op = a.ops[0]
                 right = a.comparators[0]
-                if type(op) == ast.Eq: return self.Eq(self.interpret(a.left), self.interpret(right))
-                if type(op) == ast.NotEq: return self.NotEq(self.interpret(a.left), self.interpret(right))
-                if type(op) == ast.Lt: return self.Lt(self.interpret(a.left), self.interpret(right))
-                if type(op) == ast.LtE: return self.LtE(self.interpret(a.left), self.interpret(right))
-                if type(op) == ast.Gt: return self.Gt(self.interpret(a.left), self.interpret(right))
-                if type(op) == ast.GtE: return self.GtE(self.interpret(a.left), self.interpret(right))
-                if type(op) == ast.Is: return self.Is(self.interpret(a.left), self.interpret(right))
-                if type(op) == ast.IsNot: return self.IsNot(self.interpret(a.left), self.interpret(right))
-                if type(op) == ast.In: return self.In(self.interpret(a.left), self.interpret(right))
-                if type(op) == ast.NotIn: return self.NotIn(self.interpret(a.left), self.interpret(right))
+                # Performance is not usually a serious issue in abstract interpretation
+                # and static analysis applications, so we use exceptions.
+                try:
+                    if type(op) == ast.Eq: return self.Eq(self.interpret(a.left), self.interpret(right))
+                    if type(op) == ast.NotEq: return self.NotEq(self.interpret(a.left), self.interpret(right))
+                    if type(op) == ast.Lt: return self.Lt(self.interpret(a.left), self.interpret(right))
+                    if type(op) == ast.LtE: return self.LtE(self.interpret(a.left), self.interpret(right))
+                    if type(op) == ast.Gt: return self.Gt(self.interpret(a.left), self.interpret(right))
+                    if type(op) == ast.GtE: return self.GtE(self.interpret(a.left), self.interpret(right))
+                    if type(op) == ast.Is: return self.Is(self.interpret(a.left), self.interpret(right))
+                    if type(op) == ast.IsNot: return self.IsNot(self.interpret(a.left), self.interpret(right))
+                    if type(op) == ast.In: return self.In(self.interpret(a.left), self.interpret(right))
+                    if type(op) == ast.NotIn: return self.NotIn(self.interpret(a.left), self.interpret(right))
+                except SemanticError: # Attempt catch-all definitions if above failed.
+                    return self.Compare(self.interpret(a.left), self.interpret(right))
             else:
                 raise PydrogenError("Pydrogen does not currently support expressions with chained comparison operations.")
         elif type(a) == ast.Call:
@@ -122,32 +164,19 @@ class Pydrogen():
             return self.Str(a.s)
         elif type(a) == ast.Bytes:
             return self.Bytes(a.s)
+        elif type(a) == ast.NameConstant:
+            # Performance is not usually a serious issue in abstract interpretation
+            # and static analysis applications, so we use exceptions.
+            try:
+                if a.value == True: return self.True_()
+                if a.value == False: return self.False_()
+                if a.value == None: return self.None_()
+            except SemanticError: # Attempt catch-all definitions if above failed.
+                return self.NameConstant()
         elif type(a) == ast.List:
             return self.List([self.interpret(e) for e in a.elts])
         elif type(a) == ast.Tuple:
             return self.Tuple([self.interpret(e) for e in a.elts])
-        elif type(a) == ast.BoolOp:
-            if type(a.op) == ast.And: return self.And([self.interpret(e) for e in a.values])
-            if type(a.op) == ast.Or: return self.Or([self.interpret(e) for e in a.values])
-        elif type(a) == ast.BinOp:
-            if type(a.op) == ast.Add: return self.Add(self.interpret(a.left), self.interpret(a.right))
-            if type(a.op) == ast.Sub: return self.Sub(self.interpret(a.left), self.interpret(a.right))
-            if type(a.op) == ast.Mult: return self.Mult(self.interpret(a.left), self.interpret(a.right))
-            if type(a.op) == ast.MatMult: return self.MatMult(self.interpret(a.left), self.interpret(a.right))
-            if type(a.op) == ast.Div: return self.Div(self.interpret(a.left), self.interpret(a.right))
-            if type(a.op) == ast.Mod: return self.Mod(self.interpret(a.left), self.interpret(a.right))
-            if type(a.op) == ast.Pow: return self.Pow(self.interpret(a.left), self.interpret(a.right))
-            if type(a.op) == ast.LShift: return self.LShift(self.interpret(a.left), self.interpret(a.right))
-            if type(a.op) == ast.RShift: return self.RShift(self.interpret(a.left), self.interpret(a.right))
-            if type(a.op) == ast.BitOr: return self.BitOr(self.interpret(a.left), self.interpret(a.right))
-            if type(a.op) == ast.BitXor: return self.BitXor(self.interpret(a.left), self.interpret(a.right))
-            if type(a.op) == ast.BitAnd: return self.BitAnd(self.interpret(a.left), self.interpret(a.right))
-            if type(a.op) == ast.FloorDiv: return self.FloorDiv(self.interpret(a.left), self.interpret(a.right))
-        elif type(a) == ast.UnaryOp:
-            if type(a.op) == ast.Invert: return self.Invert(self.interpret(a.operand))
-            if type(a.op) == ast.Not: return self.Not(self.interpret(a.operand))
-            if type(a.op) == ast.UAdd: return self.UAdd(self.interpret(a.operand))
-            if type(a.op) == ast.USub: return self.USub(self.interpret(a.operand))
         else:
             raise PydrogenError("Pydrogen does not currently support nodes of this type: " + ast.dump(a))
 
@@ -160,16 +189,21 @@ class Pydrogen():
     def While(self, test, ss, orelse): raise SemanticError("While")
     def If(self, test, ss, orelse): raise SemanticError("If")
 
+    def BoolOp(self, e1, e2): raise SemanticError("BoolOp")
+    def BinOp(self, e1, e2): raise SemanticError("BinOp")
+    def UnaryOp(self, e): raise SemanticError("UnaryOp")
     def Set(self, es): raise SemanticError("Set")
+    def Compare(self, e1, e2): raise SemanticError("Compare")
     def Call(self, func, args): raise SemanticError("Call")
     def Num(self, n): raise SemanticError("Num")
     def Str(self, s): raise SemanticError("Str")
     def Bytes(self, b): raise SemanticError("Bytes")
+    def NameConstant(self): raise SemanticError("NameConstant")
     def List(self, es): raise SemanticError("List")
     def Tuple(self, es): raise SemanticError("Tuple")
 
-    def And(self, e1, e2): raise SemanticError("And")
-    def Or(self, e1, e2): raise SemanticError("Or")
+    def And(self, es): raise SemanticError("And")
+    def Or(self, es): raise SemanticError("Or")
     def Add(self, e1, e2): raise SemanticError("Add")
     def Sub(self, e1, e2): raise SemanticError("Sub")
     def Mult(self, e1, e2): raise SemanticError("Mult")
@@ -199,6 +233,10 @@ class Pydrogen():
     def In(self, e1, e2): raise SemanticError("In")
     def NotIn(self, e1, e2): raise SemanticError("NotIn")
 
+    def True_(self): raise SemanticError("True")
+    def False_(self): raise SemanticError("False")
+    def None_(self): raise SemanticError("None")
+
 # A simple example extension containing the typical definitions,
 # such as passing the recursive result up through 'Module' and
 # 'FunctionDef' nodes.
@@ -213,5 +251,11 @@ class Size(Typical):
     def Statements(self, ss): return sum(ss)
     def Call(self, func, args): return sum(args)
     def Num(self, n): return 1
+    
+    def BoolOp(self, es): return sum(es)
+    def BinOp(self, e1, e2): return 1 + e1 + e2
+    def UnaryOp(self, e): return 1 + e
+    def Compare(self, e1, e2): return 1 + e1 + e2
+    def NameConstant(self): return 1
 
 ##eof
