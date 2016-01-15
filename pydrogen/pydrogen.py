@@ -90,19 +90,24 @@ class Subtree():
 # definition (https://docs.python.org/3/library/ast.html), with a
 # few deviations to accommodate the usage model for this library.
 class Pydrogen():
-    def __new__(cls, func = None):
+    def __new__(cls, arg = None):
         # Either create a new object of this class in order to
         # process functions in the future (if no function is
         # supplied at the time of creation), or immediately
         # process the supplied function and return the result.
         # This allows the class to also be used as a decorator.
-        if func is None:
+        # Abstract syntax tree arguments are simply interpreted
+        # according to the class.
+        if arg is None:
             return object.__new__(cls)
+        elif hasattr(arg, '__call__'): # Is a function.
+            return object.__new__(cls).process(arg)
         else:
-            return object.__new__(cls).process(func)
+            return object.__new__(cls).interpret(arg)
 
     def process(self, func):
-        return Function(func, self, self.interpret(ast.parse(inspect.getsource(func))))
+        original = func._func if type(func) == Function else func
+        return Function(func, self, self.interpret(ast.parse(inspect.getsource(original))))
 
     def interpret(self, a):
         if type(a) == ast.Module:
@@ -135,7 +140,7 @@ class Pydrogen():
                     Subtree(a.orelse, lambda:self.Statements(Subtree(a.body, lambda:[self.interpret(s) for s in a.orelse])))\
                 )
         elif type(a) == ast.Expr:
-            return Subtree(a.value, lambda:self.interpret(a.value))
+            return self.interpret(a.value)
         elif type(a) == ast.Pass:
             return self.Pass()
         elif type(a) == ast.Break:
@@ -208,7 +213,7 @@ class Pydrogen():
             else:
                 raise PydrogenError("Pydrogen does not currently support expressions with chained comparison operations.")
         elif type(a) == ast.Call:
-            return self.Call(Subtree(a.func), Subtree(a.args, [self.interpret(e) for e in a.args]))
+            return self.Call(Subtree(a.func), Subtree(a.args, lambda:[self.interpret(e) for e in a.args]))
         elif type(a) == ast.Num:
             return self.Num(Subtree(a.n, lambda:a.n))
         elif type(a) == ast.Str:
@@ -243,7 +248,7 @@ class Pydrogen():
     def While(self, test, ss, orelse): raise SemanticError("While")
     def If(self, test, ss, orelse): raise SemanticError("If")
 
-    def BoolOp(self, e1, e2): raise SemanticError("BoolOp")
+    def BoolOp(self, es): raise SemanticError("BoolOp")
     def BinOp(self, e1, e2): raise SemanticError("BinOp")
     def UnaryOp(self, e): raise SemanticError("UnaryOp")
     def Set(self, es): raise SemanticError("Set")
@@ -302,7 +307,7 @@ class Typical(Pydrogen):
 
 # A simple example extension for computing the size of the abstract
 # syntax tree.
-class Size(Typical):
+class ASTSize(Typical):
     def Statements(self, ss): return sum(ss.post())
 
     def Return(self, e): return 1 + e.post()
@@ -315,7 +320,7 @@ class Size(Typical):
 
     def BoolOp(self, es): return 1 + sum(es.post())
     def BinOp(self, e1, e2): return 1 + e1.post() + e2.post()
-    def UnaryOp(self, e): return 1 + e
+    def UnaryOp(self, e): return 1 + e.post()
     def Compare(self, e1, e2): return 1 + e1.post() + e2.post()
     def NameConstant(self): return 1
 
