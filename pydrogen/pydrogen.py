@@ -102,7 +102,8 @@ class Pydrogen():
             return object.__new__(cls).process(func)
 
     def process(self, func):
-        return Function(func, self, self.interpret(ast.parse(inspect.getsource(func))))
+        original = func._func if type(func) == Function else func
+        return Function(func, self, self.interpret(ast.parse(inspect.getsource(original))))
 
     def interpret(self, a):
         if type(a) == ast.Module:
@@ -135,7 +136,7 @@ class Pydrogen():
                     Subtree(a.orelse, lambda:self.Statements(Subtree(a.body, lambda:[self.interpret(s) for s in a.orelse])))\
                 )
         elif type(a) == ast.Expr:
-            return Subtree(a.value, lambda:self.interpret(a.value))
+            return self.interpret(a.value)
         elif type(a) == ast.Pass:
             return self.Pass()
         elif type(a) == ast.Break:
@@ -208,7 +209,7 @@ class Pydrogen():
             else:
                 raise PydrogenError("Pydrogen does not currently support expressions with chained comparison operations.")
         elif type(a) == ast.Call:
-            return self.Call(Subtree(a.func), Subtree(a.args, [self.interpret(e) for e in a.args]))
+            return self.Call(Subtree(a.func), Subtree(a.args, lambda:[self.interpret(e) for e in a.args]))
         elif type(a) == ast.Num:
             return self.Num(Subtree(a.n, lambda:a.n))
         elif type(a) == ast.Str:
@@ -243,7 +244,7 @@ class Pydrogen():
     def While(self, test, ss, orelse): raise SemanticError("While")
     def If(self, test, ss, orelse): raise SemanticError("If")
 
-    def BoolOp(self, e1, e2): raise SemanticError("BoolOp")
+    def BoolOp(self, es): raise SemanticError("BoolOp")
     def BinOp(self, e1, e2): raise SemanticError("BinOp")
     def UnaryOp(self, e): raise SemanticError("UnaryOp")
     def Set(self, es): raise SemanticError("Set")
@@ -315,7 +316,7 @@ class Size(Typical):
 
     def BoolOp(self, es): return 1 + sum(es.post())
     def BinOp(self, e1, e2): return 1 + e1.post() + e2.post()
-    def UnaryOp(self, e): return 1 + e
+    def UnaryOp(self, e): return 1 + e.post()
     def Compare(self, e1, e2): return 1 + e1.post() + e2.post()
     def NameConstant(self): return 1
 
