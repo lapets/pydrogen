@@ -1,4 +1,4 @@
-#####################################################################
+###############################################################################
 ## 
 ## pydrogen.py
 ##
@@ -11,20 +11,24 @@
 ##
 ##
 
-#####################################################################
-## ...
+###############################################################################
 ##
 
 import ast     # For working with Python abstract syntax trees.
 import inspect # To retrieve a function body's source code.
-#import sympy   # For symbolic polynomials and other expressions.
+#import sympy  # For symbolic polynomials and other expressions.
 
+# A PydrogenError occurs if a user of the library tries doing
+# something the library does not currently support.
 class PydrogenError(Exception):
     def __init__(self, value):
         self.value = value
     def __str__(self):
         return repr(self.value)
 
+# A SemanticError occurs if a user-defined Pydrogen class does not
+# handle a syntactic construct that is contained in the function body
+# that the class must interpret.
 class SemanticError(Exception):
     def __init__(self, value):
         if value == "Statements":
@@ -33,6 +37,43 @@ class SemanticError(Exception):
             self.value = "No semantics specified for '" + value + "' nodes."
     def __str__(self):
         return repr(self.value)
+
+# The result of an alternative interpretation is a Function object
+# that contains annotations for each of the possible alternative
+# interpretations of the function. This makes it possible to
+# "stack" decorators for multiple interpretations above a single
+# function definition.
+class Function():
+    def __init__(self, func, cls, interpretation = None):
+        self._func = func
+        self._interpretations = {}
+        if type(func) == Function:
+            self._interpretations = func._interpretations
+        self._interpretations[cls.__class__.__name__] = interpretation
+    def __getattr__(self, attr):
+        if (attr in self._interpretations): # Alternative interpretations.
+            return self._interpretations[attr]
+        return getattr(self._func, attr)
+    def __call__(self, *args, **kwargs):
+        return self._func(*args, **kwargs)
+    def __repr__(self):
+        return repr(self._func)
+    def __str__(self):
+        return str(self._func)
+
+# An alternative interpretation algorithm may want access to the
+# abstract syntax subtrees of a node both pre- and post-interpretation.
+# Thus, both are supplied within an instance of the below wrapper class.
+# Note the "lazy" evaluation of post-interpretation values (computed
+# only if they are requested).
+class Subtree():
+    def __init__(self, pre, post):
+        self._pre = pre
+        self._post = post
+    def pre(self):
+        return self._pre
+    def post(self):
+        return self._post()
 
 # The Pydrogen class can be extended to define a new operational
 # semantics or abstract interpretation for abstract syntax trees,
@@ -55,8 +96,7 @@ class Pydrogen():
             return object.__new__(cls).process(func)
 
     def process(self, func):
-        a = ast.parse(inspect.getsource(func))
-        return self.interpret(a)
+        return Function(func, self, self.interpret(ast.parse(inspect.getsource(func))))
 
     def interpret(self, a):
         if type(a) == ast.Module:
@@ -70,14 +110,14 @@ class Pydrogen():
         elif type(a) == ast.For:
             return\
                 self.For(\
-                    a.target, a.iter,\
+                    self.interpret(a.target), self.interpret(a.iter),\
                     self.Statements([self.interpret(s) for s in a.body]),\
                     self.Statements([self.interpret(s) for s in a.orelse])\
                 )
         elif type(a) == ast.While:
             return\
                 self.While(\
-                    a.test,\
+                    self.interpret(a.test),\
                     self.Statements([self.interpret(s) for s in a.body]),\
                     self.Statements([self.interpret(s) for s in a.orelse])\
                 )
@@ -173,6 +213,8 @@ class Pydrogen():
                 if a.value == None: return self.None_()
             except SemanticError: # Attempt catch-all definitions if above failed.
                 return self.NameConstant()
+        elif type(a) == ast.Name:
+            return self.Name()
         elif type(a) == ast.List:
             return self.List([self.interpret(e) for e in a.elts])
         elif type(a) == ast.Tuple:
@@ -180,11 +222,12 @@ class Pydrogen():
         else:
             raise PydrogenError("Pydrogen does not currently support nodes of this type: " + ast.dump(a))
 
+    def Statements(self, ss): raise SemanticError("Statements") # Special case.
+
     def Module(self, ss): raise SemanticError("Module")
     def FunctionDef(self, ss): raise SemanticError("FunctionDef")
     def Return(self, e): raise SemanticError("Return")
     def Assign(self, targets, e): raise SemanticError("Assign")
-    def Statements(self, ss): raise SemanticError("Statements") # Special case.
     def For(self, target, iter, ss, orelse): raise SemanticError("For")
     def While(self, test, ss, orelse): raise SemanticError("While")
     def If(self, test, ss, orelse): raise SemanticError("If")
@@ -199,6 +242,7 @@ class Pydrogen():
     def Str(self, s): raise SemanticError("Str")
     def Bytes(self, b): raise SemanticError("Bytes")
     def NameConstant(self): raise SemanticError("NameConstant")
+    def Name(self): raise SemanticError("Name")
     def List(self, es): raise SemanticError("List")
     def Tuple(self, es): raise SemanticError("Tuple")
 
@@ -249,10 +293,16 @@ class Typical(Pydrogen):
 # syntax tree.
 class Size(Typical):
     def Statements(self, ss): return sum(ss)
-    def Call(self, func, args): return sum(args)
+
+    def Return(self, e): return 1 + e
+    def Assign(self, targets, e): return 1 + e
+
+    def Call(self, func, args): return 1 + sum(args)
     def Num(self, n): return 1
-    
-    def BoolOp(self, es): return sum(es)
+    def NameConstant(self): return 1
+    def Name(self): return 1
+
+    def BoolOp(self, es): return 1 + sum(es)
     def BinOp(self, e1, e2): return 1 + e1 + e2
     def UnaryOp(self, e): return 1 + e
     def Compare(self, e1, e2): return 1 + e1 + e2
