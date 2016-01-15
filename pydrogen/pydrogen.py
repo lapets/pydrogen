@@ -90,16 +90,20 @@ class Subtree():
 # definition (https://docs.python.org/3/library/ast.html), with a
 # few deviations to accommodate the usage model for this library.
 class Pydrogen():
-    def __new__(cls, func = None):
+    def __new__(cls, arg = None):
         # Either create a new object of this class in order to
         # process functions in the future (if no function is
         # supplied at the time of creation), or immediately
         # process the supplied function and return the result.
         # This allows the class to also be used as a decorator.
-        if func is None:
+        # Abstract syntax tree arguments are simply interpreted
+        # according to the class.
+        if arg is None:
             return object.__new__(cls)
+        elif hasattr(arg, '__call__'): # Is a function.
+            return object.__new__(cls).process(arg)
         else:
-            return object.__new__(cls).process(func)
+            return object.__new__(cls).interpret(arg)
 
     def process(self, func):
         original = func._func if type(func) == Function else func
@@ -303,7 +307,7 @@ class Typical(Pydrogen):
 
 # A simple example extension for computing the size of the abstract
 # syntax tree.
-class Size(Typical):
+class ASTSize(Typical):
     def Statements(self, ss): return sum(ss.post())
 
     def Return(self, e): return 1 + e.post()
