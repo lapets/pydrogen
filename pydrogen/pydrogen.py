@@ -67,12 +67,18 @@ class Function():
 # Note the "lazy" evaluation of post-interpretation values (computed
 # only if they are requested).
 class Subtree():
-    def __init__(self, pre, post):
+    def __init__(self, pre, post = None):
         self._pre = pre
         self._post = post
     def pre(self):
         return self._pre
     def post(self):
+        if self._post is None:
+            raise PydrogenError(\
+                    "Pydrogen does not currently support definitions for "\
+                    + "alternative interpretations of nodes of this type: "\
+                    + ast.dump(self._pre)\
+                )
         return self._post()
 
 # The Pydrogen class can be extended to define a new operational
@@ -100,36 +106,36 @@ class Pydrogen():
 
     def interpret(self, a):
         if type(a) == ast.Module:
-            return self.Module(self.Statements([self.interpret(s) for s in a.body]))
+            return self.Module(Subtree(a.body, lambda:self.Statements(Subtree(a.body, lambda:[self.interpret(s) for s in a.body]))))
         elif type(a) == ast.FunctionDef:
-            return self.FunctionDef(self.Statements([self.interpret(s) for s in a.body]))
+            return self.FunctionDef(Subtree(a.body, lambda:self.Statements(Subtree(a.body, lambda:[self.interpret(s) for s in a.body]))))
         elif type(a) == ast.Return:
-            return self.Return(self.interpret(a.value))
+            return self.Return(Subtree(a.value, lambda:self.interpret(a.value)))
         elif type(a) == ast.Assign:
-            return self.Assign(targets, self.interpret(a.value)) 
+            return self.Assign(Subtree(targets), Subtree(a.value, lambda:self.interpret(a.value))) 
         elif type(a) == ast.For:
             return\
                 self.For(\
-                    self.interpret(a.target), self.interpret(a.iter),\
-                    self.Statements([self.interpret(s) for s in a.body]),\
-                    self.Statements([self.interpret(s) for s in a.orelse])\
+                    Subtree(a.target), Subtree(a.iter, lambda:self.interpret(a.iter)),\
+                    Subtree(a.body, lambda:self.Statements(Subtree(a.body, lambda:[self.interpret(s) for s in a.body]))),\
+                    Subtree(a.orelse, lambda:self.Statements(Subtree(a.body, lambda:[self.interpret(s) for s in a.orelse])))\
                 )
         elif type(a) == ast.While:
             return\
                 self.While(\
-                    self.interpret(a.test),\
-                    self.Statements([self.interpret(s) for s in a.body]),\
-                    self.Statements([self.interpret(s) for s in a.orelse])\
+                    Subtree(a.test, lambda:self.interpret(a.test)),\
+                    Subtree(a.body, lambda:self.Statements(Subtree(a.body, lambda:[self.interpret(s) for s in a.body]))),\
+                    Subtree(a.orelse, lambda:self.Statements(Subtree(a.body, lambda:[self.interpret(s) for s in a.orelse])))\
                 )
         elif type(a) == ast.If:
             return\
                 self.If(\
-                    a.test,\
-                    self.Statements([self.interpret(s) for s in a.body]),\
-                    self.Statements([self.interpret(s) for s in a.orelse])\
+                    Subtree(a.test, lambda:self.interpret(a.test)),\
+                    Subtree(a.body, lambda:self.Statements(Subtree(a.body, lambda:[self.interpret(s) for s in a.body]))),\
+                    Subtree(a.orelse, lambda:self.Statements(Subtree(a.body, lambda:[self.interpret(s) for s in a.orelse])))\
                 )
         elif type(a) == ast.Expr:
-            return self.interpret(a.value)
+            return Subtree(a.value, lambda:self.interpret(a.value))
         elif type(a) == ast.Pass:
             return self.Pass()
         elif type(a) == ast.Break:
@@ -140,70 +146,75 @@ class Pydrogen():
             # Performance is not usually a serious issue in abstract interpretation
             # and static analysis applications, so we use exceptions.
             try:
-                if type(a.op) == ast.And: return self.And([self.interpret(e) for e in a.values])
-                if type(a.op) == ast.Or: return self.Or([self.interpret(e) for e in a.values])
+                if type(a.op) == ast.And: return self.And(Subtree(a.values, lambda:[self.interpret(e) for e in a.values]))
+                if type(a.op) == ast.Or: return self.Or(Subtree(a.values, lambda:[self.interpret(e) for e in a.values]))
             except SemanticError: # Attempt catch-all definitions if above failed.
-                return self.BoolOp([self.interpret(e) for e in a.values])
+                return self.BoolOp(Subtree(a.values, lambda:[self.interpret(e) for e in a.values]))
         elif type(a) == ast.BinOp:
+            l = Subtree(a.left, lambda:self.interpret(a.left))
+            r = Subtree(a.right, lambda:self.interpret(a.right))
             # Performance is not usually a serious issue in abstract interpretation
             # and static analysis applications, so we use exceptions.
             try:
-                if type(a.op) == ast.Add: return self.Add(self.interpret(a.left), self.interpret(a.right))
-                if type(a.op) == ast.Sub: return self.Sub(self.interpret(a.left), self.interpret(a.right))
-                if type(a.op) == ast.Mult: return self.Mult(self.interpret(a.left), self.interpret(a.right))
-                if type(a.op) == ast.MatMult: return self.MatMult(self.interpret(a.left), self.interpret(a.right))
-                if type(a.op) == ast.Div: return self.Div(self.interpret(a.left), self.interpret(a.right))
-                if type(a.op) == ast.Mod: return self.Mod(self.interpret(a.left), self.interpret(a.right))
-                if type(a.op) == ast.Pow: return self.Pow(self.interpret(a.left), self.interpret(a.right))
-                if type(a.op) == ast.LShift: return self.LShift(self.interpret(a.left), self.interpret(a.right))
-                if type(a.op) == ast.RShift: return self.RShift(self.interpret(a.left), self.interpret(a.right))
-                if type(a.op) == ast.BitOr: return self.BitOr(self.interpret(a.left), self.interpret(a.right))
-                if type(a.op) == ast.BitXor: return self.BitXor(self.interpret(a.left), self.interpret(a.right))
-                if type(a.op) == ast.BitAnd: return self.BitAnd(self.interpret(a.left), self.interpret(a.right))
-                if type(a.op) == ast.FloorDiv: return self.FloorDiv(self.interpret(a.left), self.interpret(a.right))
+                if type(a.op) == ast.Add: return self.Add(l, r)
+                if type(a.op) == ast.Sub: return self.Sub(l, r)
+                if type(a.op) == ast.Mult: return self.Mult(l, r)
+                if type(a.op) == ast.MatMult: return self.MatMult(l, r)
+                if type(a.op) == ast.Div: return self.Div(l, r)
+                if type(a.op) == ast.Mod: return self.Mod(l, r)
+                if type(a.op) == ast.Pow: return self.Pow(l, r)
+                if type(a.op) == ast.LShift: return self.LShift(l, r)
+                if type(a.op) == ast.RShift: return self.RShift(l, r)
+                if type(a.op) == ast.BitOr: return self.BitOr(l, r)
+                if type(a.op) == ast.BitXor: return self.BitXor(l, r)
+                if type(a.op) == ast.BitAnd: return self.BitAnd(l, r)
+                if type(a.op) == ast.FloorDiv: return self.FloorDiv(l, r)
             except SemanticError: # Attempt catch-all definitions if above failed.
-                return self.BinOp(self.interpret(a.left), self.interpret(a.right))
+                return self.BinOp(l, r)
         elif type(a) == ast.UnaryOp:
+            b = Subtree(a.operand, lambda:self.interpret(a.operand))
             # Performance is not usually a serious issue in abstract interpretation
             # and static analysis applications, so we use exceptions.
             try:
-                if type(a.op) == ast.Invert: return self.Invert(self.interpret(a.operand))
-                if type(a.op) == ast.Not: return self.Not(self.interpret(a.operand))
-                if type(a.op) == ast.UAdd: return self.UAdd(self.interpret(a.operand))
-                if type(a.op) == ast.USub: return self.USub(self.interpret(a.operand))
+                if type(a.op) == ast.Invert: return self.Invert(b)
+                if type(a.op) == ast.Not: return self.Not(b)
+                if type(a.op) == ast.UAdd: return self.UAdd(b)
+                if type(a.op) == ast.USub: return self.USub(b)
             except SemanticError: # Attempt catch-all definitions if above failed.
-                return self.UnaryOp(self.interpret(a.operand))
+                return self.UnaryOp(b)
         elif type(a) == ast.Set:
-            return self.Set([self.interpret(e) for e in a.elts])
+            return self.Set(Subtree(a.elts, lambda:[self.interpret(e) for e in a.elts]))
         elif type(a) == ast.Compare:
             if len(a.ops) == 1 and len(a.comparators) == 1:
                 op = a.ops[0]
                 right = a.comparators[0]
+                l = Subtree(a.left, lambda:self.interpret(a.left))
+                r = Subtree(right, lambda:self.interpret(right))
                 # Performance is not usually a serious issue in abstract interpretation
                 # and static analysis applications, so we use exceptions.
                 try:
-                    if type(op) == ast.Eq: return self.Eq(self.interpret(a.left), self.interpret(right))
-                    if type(op) == ast.NotEq: return self.NotEq(self.interpret(a.left), self.interpret(right))
-                    if type(op) == ast.Lt: return self.Lt(self.interpret(a.left), self.interpret(right))
-                    if type(op) == ast.LtE: return self.LtE(self.interpret(a.left), self.interpret(right))
-                    if type(op) == ast.Gt: return self.Gt(self.interpret(a.left), self.interpret(right))
-                    if type(op) == ast.GtE: return self.GtE(self.interpret(a.left), self.interpret(right))
-                    if type(op) == ast.Is: return self.Is(self.interpret(a.left), self.interpret(right))
-                    if type(op) == ast.IsNot: return self.IsNot(self.interpret(a.left), self.interpret(right))
-                    if type(op) == ast.In: return self.In(self.interpret(a.left), self.interpret(right))
-                    if type(op) == ast.NotIn: return self.NotIn(self.interpret(a.left), self.interpret(right))
+                    if type(op) == ast.Eq: return self.Eq(l, r)
+                    if type(op) == ast.NotEq: return self.NotEq(l, r)
+                    if type(op) == ast.Lt: return self.Lt(l, r)
+                    if type(op) == ast.LtE: return self.LtE(l, r)
+                    if type(op) == ast.Gt: return self.Gt(l, r)
+                    if type(op) == ast.GtE: return self.GtE(l, r)
+                    if type(op) == ast.Is: return self.Is(l, r)
+                    if type(op) == ast.IsNot: return self.IsNot(l, r)
+                    if type(op) == ast.In: return self.In(l, r)
+                    if type(op) == ast.NotIn: return self.NotIn(l, r)
                 except SemanticError: # Attempt catch-all definitions if above failed.
-                    return self.Compare(self.interpret(a.left), self.interpret(right))
+                    return self.Compare(l, r)
             else:
                 raise PydrogenError("Pydrogen does not currently support expressions with chained comparison operations.")
         elif type(a) == ast.Call:
-            return self.Call(a.func, [self.interpret(e) for e in a.args])
+            return self.Call(Subtree(a.func), Subtree(a.args, [self.interpret(e) for e in a.args]))
         elif type(a) == ast.Num:
-            return self.Num(a.n)
+            return self.Num(Subtree(a.n, lambda:a.n))
         elif type(a) == ast.Str:
-            return self.Str(a.s)
+            return self.Str(Subtree(a.s, lambda:a.s))
         elif type(a) == ast.Bytes:
-            return self.Bytes(a.s)
+            return self.Bytes(Subtree(a.s, lambda:a.s))
         elif type(a) == ast.NameConstant:
             # Performance is not usually a serious issue in abstract interpretation
             # and static analysis applications, so we use exceptions.
@@ -216,9 +227,9 @@ class Pydrogen():
         elif type(a) == ast.Name:
             return self.Name()
         elif type(a) == ast.List:
-            return self.List([self.interpret(e) for e in a.elts])
+            return self.List(Subtree(a.elts, lambda:[self.interpret(e) for e in a.elts]))
         elif type(a) == ast.Tuple:
-            return self.Tuple([self.interpret(e) for e in a.elts])
+            return self.Tuple(Subtree(a.elts, lambda:[self.interpret(e) for e in a.elts]))
         else:
             raise PydrogenError("Pydrogen does not currently support nodes of this type: " + ast.dump(a))
 
@@ -285,27 +296,27 @@ class Pydrogen():
 # such as passing the recursive result up through 'Module' and
 # 'FunctionDef' nodes.
 class Typical(Pydrogen):
-    def Module(self, ss): return ss
-    def FunctionDef(self, ss): return ss
-    def Return(self, e): return e
+    def Module(self, ss): return ss.post()
+    def FunctionDef(self, ss): return ss.post()
+    def Return(self, e): return e.post()
 
 # A simple example extension for computing the size of the abstract
 # syntax tree.
 class Size(Typical):
-    def Statements(self, ss): return sum(ss)
+    def Statements(self, ss): return sum(ss.post())
 
-    def Return(self, e): return 1 + e
-    def Assign(self, targets, e): return 1 + e
+    def Return(self, e): return 1 + e.post()
+    def Assign(self, targets, e): return 1 + e.post()
 
-    def Call(self, func, args): return 1 + sum(args)
+    def Call(self, func, args): return 1 + sum(args.post())
     def Num(self, n): return 1
     def NameConstant(self): return 1
     def Name(self): return 1
 
-    def BoolOp(self, es): return 1 + sum(es)
-    def BinOp(self, e1, e2): return 1 + e1 + e2
+    def BoolOp(self, es): return 1 + sum(es.post())
+    def BinOp(self, e1, e2): return 1 + e1.post() + e2.post()
     def UnaryOp(self, e): return 1 + e
-    def Compare(self, e1, e2): return 1 + e1 + e2
+    def Compare(self, e1, e2): return 1 + e1.post() + e2.post()
     def NameConstant(self): return 1
 
 ##eof
