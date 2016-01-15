@@ -5,7 +5,10 @@
     <meta content="all" name="robots" />
     <title>pydrogen</title>
     <link rel="shortcut icon"type="image/x-icon" href="data:image/x-icon;,"><!-- Suppress browser favicon.ico request. -->
-    <link rel="stylesheet" type="text/css" href="http://fonts.googleapis.com/css?family=Open+Sans">
+    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.1.0/styles/vs.min.css">
+    <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.1.0/highlight.min.js"></script>
+    <link rel="stylesheet" type="text/css" href="//fonts.googleapis.com/css?family=Open+Sans">
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/1.12.0/jquery.min.js"></script>
     <style>
 html, body { height:100%; margin:0; color:#000000; font-family:'Open Sans',sans-serif; }
 body #content { z-index:100; min-height:100%; width:900px; margin:0 auto -90px; }
@@ -13,6 +16,8 @@ body #content #title { margin-left:-2px; padding-top:60px; padding-bottom:20px; 
 body #content #description { padding-bottom:40px; font-size:16px; }
 body #content #sheet { margin:0 auto; padding-bottom:40px; color:#000000; background-color:white; }
 body #content #sheet .section { padding-top:20px; font-family:'Open Sans',sans-serif; font-size:16px; }
+body #content #sheet .section pre code { padding:10px; font-size:14px; }
+body #content #sheet .section code { background-color:#F1F1F1; }
 body #content #sheet .section h2 { color:#888888; font-family:'Open Sans',sans-serif; font-weight:normal; font-size:28px; }
 body #content #sheet .section ul { list-style:none; padding:8px 0px 8px 0px; margin:0; }
 body #content #sheet .section li { padding-left:1.5em; text-indent:-1em; }
@@ -33,25 +38,92 @@ body #footer a:hover { text-decoration:underline; }
       newLink.type = 'image/x-icon';
       newLink.href = 'data:image/png;base64,'+favIcon;
       docHead.appendChild(newLink);
+      hljs.initHighlightingOnLoad();
     </script>
     <base target="_parent">
   </head>
-  <body>
+  <body onload="$('code').each(function(){ $(this).html(($(this).html().trim()));});">
     <div id="content">
       <div id="title">pydrogen</div>
       <div id="description">
         Python library for building embedded languages within Python that have alternative operational semantics or abstract interpretations.
       </div>
       <div id="sheet">
-        <div class="section">
-          <h2>Repository</h2>
-            The <a href="http://github.com/lapets/pydrogen">official repository</a> is maintained on GitHub.
+        <div class="section"><h2>Purpose</h2>
+          This library allows programmers to free the building blocks that constitute Python syntax from the default Python semantics. It is designed to allow programmers to define quickly and to use immediately one or more alternative abstract interpretation or operational semantics for Python.
+        </div>
+        <div class="section"><h2>Repository and Package</h2>
+          The <a href="http://github.com/lapets/pydrogen">official repository</a> is maintained on GitHub. The package is also <a href="http://pypi.python.org/pypi/Pydrogen">available on PyPI</a>.
+          <pre><code>
+pip install pydrogen
+          </code></pre>
+        </div>
+        <div class="section"><h2>Examples</h2>
+          Defining a simple type checking algorithm.
+          <pre><code class="py">
+class Ty(pydrogen.Pydrogen):
+    def Statements(self, ss): return ss.post()[-1] # Last statement.
+    def Module(self, ss): return ss.post()
+    def FunctionDef(self, ss): return ss.post()
+    def Return(self, e): return e.post()
+
+    def True_(self): return 'Bool'
+    def False_(self): return 'Bool'
+    def BoolOp(self, es): return 'Bool'if frozenset(es.post()) == {'Bool'} else 'Error'
+    def Not(self, e): return 'Bool' if e.post() == 'Bool' else 'Error'
+
+    def Num(self, n): return 'Int'
+    def Add(self, e1, e2): return 'Int' if e1.post() == 'Int' and e2.post() == 'Int' else 'Error'
+    def Sub(self, e1, e2): return 'Int' if e1.post() == 'Int' and e2.post() == 'Int' else 'Error'
+    def Mult(self, e1, e2): return 'Int' if e1.post() == 'Int' and e2.post() == 'Int' else 'Error'
+    def USub(self, e): return 'Int' if e.post() == 'Int' else 'Error'
+          </code></pre>
+          Given the above definition, we can use <code>@Ty</code> as a decorator:
+          <pre><code class="py">
+@Ty
+def correct():
+    return -1 + 2 - 3 * 4
+
+print("The type of 'correct' is " + str(correct.Ty) + ".")
+
+@Ty
+def incorrect():
+    return 123 and False
+
+print("The type of 'incorrect' is " + str(incorrect.Ty) + ".")
+          </code></pre>
+          The example below illustrates how multiple interpretations can be used together by defining a running time approximation algorithm for a very small subset of Python.
+          <pre><code class="py">
+class Size(pydrogen.Typical):
+    def List(self, elts): return len(elts.post())
+    def Num(self, n): return 1
+
+class Time(pydrogen.Typical):
+    def Statements(self, ss): return sum(ss.post())
+    def Assign(self, targets, e): return 1 + e.post()
+    def For(self, target, itr, ss, orelse): return Size(itr.pre()) * (1 + ss.post())
+    def BoolOp(self, es): return 1 + sum(es.post())
+    def BinOp(self, e1, e2): return 1 + e1.post() + e2.post()
+    def Call(self, func, args): return 1 + sum(args.post())
+    def Num(self, n): return 0
+    def NameConstant(self): return 0
+
+@Time
+def example():
+    for x in [1,2,3,4,5,6,7]:
+        print(True and False)
+        print(123 + 456)
+
+print("The approximate running time of example is " + str(example.Time) + ".")
+        </code></pre>
         </div>
       </div><!-- /#sheet -->
       <div id="footer_spacer"></div>
     </div><!-- /#content -->
     <div id="footer">
       <hr/>
+      <a href="http://pypi.python.org/pypi/Pydrogen">Package</a>
+      &nbsp;&nbsp;&nbsp;&nbsp;
       <a href="http://www.github.com/lapets/pydrogen">Repository</a>
       &nbsp;&nbsp;&nbsp;&nbsp;
       <a href="mailto:a@lapets.io">Contact</a>
