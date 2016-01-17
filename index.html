@@ -115,7 +115,33 @@ def example():
         print(123 + 456)
 
 print("The approximate running time of example is " + str(example.Time) + ".")
-        </code></pre>
+          </code></pre>
+          The example below illustrates how the optional context parameter can be used to create environments. Note that we because only the statement handlers return <code>(env, ty)</code> tuples, we only need to handle such tuple results when they appear (while not worrying about them when dealing with results from expression handlers, which do not return the environment).
+          <pre><code class="py">
+class Ty2(pydrogen.Typical):
+    def Statements(self, ss, env):
+        (tys, env) = ss.post(env)
+        return tys[-1]
+    def Assign(self, targets, value, env):
+        var = targets.pre()[0].id # Only single variable assignment.
+        envNew = env.copy()
+        envNew[var] = value.post(env)
+        return ('Void', envNew)
+    def Name(self, x, env):
+        return env[x.pre()] if x.pre() in env else 'Error'
+    def Num(self, n, env):
+        return 'Int'
+    def Add(self, e1, e2, env):
+        return 'Int' if {e1.post(env), e2.post(env)} == {'Int'} else 'Error'
+
+@Ty2
+def example2():
+    y = 0
+    x = 1 + 2 + 3
+    return x + y
+
+print("The type of example2() is " + str(example2.Ty2) + ".")
+          </code></pre>
         </div>
       </div><!-- /#sheet -->
       <div id="footer_spacer"></div>
