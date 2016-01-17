@@ -9,6 +9,6 @@ setup(
 	url              = 'http://pydrogen.org',
 	author           = 'A. Lapets',
 	author_email     = 'a@lapets.io',
-    description = 'Python library for building embedded languages within Python that have alternative operational semantics and abstract interpretations..',
+    description      = 'Python library for building embedded languages within Python that have alternative operational semantics and abstract interpretations.',
     long_description = open('README').read(),
 )
