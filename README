@@ -1,0 +1,26 @@
+pydrogen
+========
+
+Python library for building embedded languages within Python that have alternative operational semantics or abstract interpretations.
+
+Purpose
+-------
+This library allows programmers to free the building blocks that constitute Python syntax from the default Python semantics. It is designed to allow programmers to define quickly and to use immediately one or more alternative abstract interpretation or operational semantics for Python.
+
+Web:           pydrogen.org
+Version:       0.0.2.0
+Compatibility: Python 3
+Dependencies:  ast, inspect
+
+Package Installation and Usage
+------------------------------
+
+The package is available on PyPI:
+
+    pip install pydrogen
+
+The library can be imported in the usual way:
+
+    import pydrogen
+    
+Some usage examples can be found at http://pydrogen.org.

@@ -48,7 +48,7 @@ class Function():
         self._func = func
         self._interpretations = {}
         if type(func) == Function:
-            self._interpretations = func._interpretations
+            self._interpretations = {k:func._interpretations[k] for k in func._interpretations}
         self._interpretations[cls.__class__.__name__] = interpretation
     def __getattr__(self, attr):
         if (attr in self._interpretations): # Alternative interpretations.
@@ -72,14 +72,21 @@ class Subtree():
         self._post = post
     def pre(self):
         return self._pre
-    def post(self):
+    def post(self, context = None):
         if self._post is None:
             raise PydrogenError(\
                     "Pydrogen does not currently support definitions for "\
                     + "alternative interpretations of nodes of this type: "\
                     + ast.dump(self._pre)\
                 )
-        return self._post()
+        result = self._post(context)
+        if type(result) == tuple:
+            if context is None:
+                return result[0] # Discard context.
+            else:
+                return result # With context.
+        else:
+            return result
 
 # The Pydrogen class can be extended to define a new operational
 # semantics or abstract interpretation for abstract syntax trees,
@@ -107,203 +114,230 @@ class Pydrogen():
 
     def process(self, func):
         original = func._func if type(func) == Function else func
-        return Function(func, self, self.interpret(ast.parse(inspect.getsource(original))))
+        return Function(func, self, self.interpret(ast.parse(inspect.getsource(original)), {}))
 
-    def interpret(self, a):
+    # Attempt running the function with only the number of arguments
+    # that it can handle. This allows users to completely ignore the
+    # context argument if they do not need contexts in their alternative
+    # interpretation.
+    def attempt(self, f, *args):
+        return f(*args[0:len(inspect.getargspec(f).args)-1])
+
+    # Interpret a list of abstract syntax tree nodes in order, threading the
+    # context through the process (or throwing it away if it is not supplied).
+    def interprets(self, ss, context = None):
+        rs = []
+        for s in ss:
+            r = self.interpret(s, context)
+            if type(r) == tuple:
+                (r, context) = r
+            rs.append(r)
+        if context is None:
+            return rs
+        else:
+            return (rs, context)
+
+    # Interpret a single abstract syntax tree node by calling the appropriate
+    # (user-overloaded) handler for that node. Note that we attempt to use a
+    # handler that can accept a context, and if that fails, we revert to a
+    # call without a context.
+    def interpret(self, a, context = None):
         if type(a) == ast.Module:
-            return self.Module(Subtree(a.body, lambda:self.Statements(Subtree(a.body, lambda:[self.interpret(s) for s in a.body]))))
+            body = Subtree(a.body, lambda context: self.attempt(self.Statements, Subtree(a.body, lambda context: self.interprets(a.body, context)), context))
+            return self.attempt(self.Module, body, context)
         elif type(a) == ast.FunctionDef:
-            return self.FunctionDef(Subtree(a.body, lambda:self.Statements(Subtree(a.body, lambda:[self.interpret(s) for s in a.body]))))
+            body = Subtree(a.body, lambda context: self.attempt(self.Statements, Subtree(a.body, lambda context: self.interprets(a.body, context)), context))
+            return self.attempt(self.FunctionDef, body, context)
         elif type(a) == ast.Return:
-            return self.Return(Subtree(a.value, lambda:self.interpret(a.value)))
+            value = Subtree(a.value, lambda context: self.interpret(a.value, context))
+            return self.attempt(self.FunctionDef, value, context)
         elif type(a) == ast.Assign:
-            return self.Assign(Subtree(targets), Subtree(a.value, lambda:self.interpret(a.value))) 
+            value = Subtree(a.value, lambda context: self.interpret(a.value, context))
+            return self.attempt(self.Assign, Subtree(a.targets), value, context)
         elif type(a) == ast.For:
-            return\
-                self.For(\
-                    Subtree(a.target), Subtree(a.iter, lambda:self.interpret(a.iter)),\
-                    Subtree(a.body, lambda:self.Statements(Subtree(a.body, lambda:[self.interpret(s) for s in a.body]))),\
-                    Subtree(a.orelse, lambda:self.Statements(Subtree(a.body, lambda:[self.interpret(s) for s in a.orelse])))\
-                )
+            iter = Subtree(a.iter, lambda context: self.interpret(a.iter, context))
+            body = Subtree(a.body, lambda context: self.attempt(self.Statements, Subtree(a.body, lambda context: self.interprets(a.body, context)), context))
+            orelse = Subtree(a.orelse, lambda context: self.attempt(self.Statements, Subtree(a.orelse, lambda context: self.interprets(a.orelse, context)), context))
+            return self.attempt(self.For, Subtree(a.target), iter, body, orelse, context)
         elif type(a) == ast.While:
-            return\
-                self.While(\
-                    Subtree(a.test, lambda:self.interpret(a.test)),\
-                    Subtree(a.body, lambda:self.Statements(Subtree(a.body, lambda:[self.interpret(s) for s in a.body]))),\
-                    Subtree(a.orelse, lambda:self.Statements(Subtree(a.body, lambda:[self.interpret(s) for s in a.orelse])))\
-                )
+            test = Subtree(a.test, lambda context: self.interpret(a.test, context))
+            body = Subtree(a.body, lambda context: self.attempt(self.Statements, Subtree(a.body, lambda context: self.interprets(a.body, context)), context))
+            orelse = Subtree(a.orelse, lambda context: self.attempt(self.Statements, Subtree(a.orelse, lambda context: self.interprets(a.orelse, context)), context))
+            return self.attempt(self.While, test, body, orelse, context)
         elif type(a) == ast.If:
-            return\
-                self.If(\
-                    Subtree(a.test, lambda:self.interpret(a.test)),\
-                    Subtree(a.body, lambda:self.Statements(Subtree(a.body, lambda:[self.interpret(s) for s in a.body]))),\
-                    Subtree(a.orelse, lambda:self.Statements(Subtree(a.body, lambda:[self.interpret(s) for s in a.orelse])))\
-                )
+            test = Subtree(a.test, lambda context: self.interpret(a.test, context))
+            body = Subtree(a.body, lambda context: self.attempt(self.Statements, Subtree(a.body, lambda context: self.interprets(a.body, context)), context))
+            orelse = Subtree(a.orelse, lambda context: self.attempt(self.Statements, Subtree(a.orelse, lambda context: self.interprets(a.orelse, context)), context))
+            return self.attempt(self.If, test, body, orelse, context)
         elif type(a) == ast.Expr:
-            return self.interpret(a.value)
+            return self.interpret(a.value, context)
         elif type(a) == ast.Pass:
-            return self.Pass()
+            return self.attempt(self.Pass, context)
         elif type(a) == ast.Break:
-            return self.Break()
+            return self.attempt(self.Break, context)
         elif type(a) == ast.Continue:
-            return self.Continue()
+            return self.attempt(self.Continue, context)
         elif type(a) == ast.BoolOp:
+            values = Subtree(a.values, lambda context: self.interprets(a.values, context))
             # Performance is not usually a serious issue in abstract interpretation
             # and static analysis applications, so we use exceptions.
             try:
-                if type(a.op) == ast.And: return self.And(Subtree(a.values, lambda:[self.interpret(e) for e in a.values]))
-                if type(a.op) == ast.Or: return self.Or(Subtree(a.values, lambda:[self.interpret(e) for e in a.values]))
+                if type(a.op) == ast.And: return self.attempt(self.And, values, context)
+                if type(a.op) == ast.Or:  return self.attempt(self.Or, values, context)
             except SemanticError: # Attempt catch-all definitions if above failed.
-                return self.BoolOp(Subtree(a.values, lambda:[self.interpret(e) for e in a.values]))
+                return self.attempt(self.BoolOp, values, context)
         elif type(a) == ast.BinOp:
-            l = Subtree(a.left, lambda:self.interpret(a.left))
-            r = Subtree(a.right, lambda:self.interpret(a.right))
+            l = Subtree(a.left, lambda context: self.interpret(a.left, context))
+            r = Subtree(a.right, lambda context: self.interpret(a.right, context))
             # Performance is not usually a serious issue in abstract interpretation
             # and static analysis applications, so we use exceptions.
             try:
-                if type(a.op) == ast.Add: return self.Add(l, r)
-                if type(a.op) == ast.Sub: return self.Sub(l, r)
-                if type(a.op) == ast.Mult: return self.Mult(l, r)
-                if type(a.op) == ast.MatMult: return self.MatMult(l, r)
-                if type(a.op) == ast.Div: return self.Div(l, r)
-                if type(a.op) == ast.Mod: return self.Mod(l, r)
-                if type(a.op) == ast.Pow: return self.Pow(l, r)
-                if type(a.op) == ast.LShift: return self.LShift(l, r)
-                if type(a.op) == ast.RShift: return self.RShift(l, r)
-                if type(a.op) == ast.BitOr: return self.BitOr(l, r)
-                if type(a.op) == ast.BitXor: return self.BitXor(l, r)
-                if type(a.op) == ast.BitAnd: return self.BitAnd(l, r)
-                if type(a.op) == ast.FloorDiv: return self.FloorDiv(l, r)
+                if type(a.op) == ast.Add: return self.attempt(self.Add, l, r, context)
+                if type(a.op) == ast.Sub: return self.attempt(self.Sub, l, r, context)
+                if type(a.op) == ast.Mult: return self.attempt(self.Mult, l, r, context)
+                if type(a.op) == ast.MatMult: return self.attempt(self.MatMult, l, r, context)
+                if type(a.op) == ast.Div: return self.attempt(self.Div, l, r, context)
+                if type(a.op) == ast.Mod: return self.attempt(self.Mod, l, r, context)
+                if type(a.op) == ast.Pow: return self.attempt(self.Pow, l, r, context)
+                if type(a.op) == ast.LShift: return self.attempt(self.LShift, l, r, context)
+                if type(a.op) == ast.RShift: return self.attempt(self.RShift, l, r, context)
+                if type(a.op) == ast.BitOr: return self.attempt(self.BitOr, l, r, context)
+                if type(a.op) == ast.BitXor: return self.attempt(self.BitXor, l, r, context)
+                if type(a.op) == ast.BitAnd: return self.attempt(self.BitAnd, l, r, context)
+                if type(a.op) == ast.FloorDiv: return self.attempt(self.FloorDiv, l, r, context)
             except SemanticError: # Attempt catch-all definitions if above failed.
-                return self.BinOp(l, r)
+                return self.attempt(self.BinOp, l, r, context)
         elif type(a) == ast.UnaryOp:
-            b = Subtree(a.operand, lambda:self.interpret(a.operand))
+            operand = Subtree(a.operand, lambda context: self.interpret(a.operand, context))
             # Performance is not usually a serious issue in abstract interpretation
             # and static analysis applications, so we use exceptions.
             try:
-                if type(a.op) == ast.Invert: return self.Invert(b)
-                if type(a.op) == ast.Not: return self.Not(b)
-                if type(a.op) == ast.UAdd: return self.UAdd(b)
-                if type(a.op) == ast.USub: return self.USub(b)
+                if type(a.op) == ast.Invert: return self.attempt(self.Invert, operand, context)
+                if type(a.op) == ast.Not: return self.attempt(self.Not, operand, context)
+                if type(a.op) == ast.UAdd: return self.attempt(self.UAdd, operand, context)
+                if type(a.op) == ast.USub: return self.attempt(self.USub, operand, context)
             except SemanticError: # Attempt catch-all definitions if above failed.
-                return self.UnaryOp(b)
+                return self.attempt(self.UnaryOp, operand, context)
         elif type(a) == ast.Set:
-            return self.Set(Subtree(a.elts, lambda:[self.interpret(e) for e in a.elts]))
+            return self.attempt(self.Set, Subtree(a.elts, lambda context: self.interprets(a.elts, context)), context)
         elif type(a) == ast.Compare:
-            if len(a.ops) == 1 and len(a.comparators) == 1:
+            if not(len(a.ops) == 1 and len(a.comparators) == 1):
+                raise PydrogenError("Pydrogen does not currently support expressions with chained comparison operations.")
+            else:
                 op = a.ops[0]
                 right = a.comparators[0]
-                l = Subtree(a.left, lambda:self.interpret(a.left))
-                r = Subtree(right, lambda:self.interpret(right))
+                l = Subtree(a.left, lambda context: self.interpret(a.left, context))
+                r = Subtree(right, lambda context: self.interpret(right, context))
                 # Performance is not usually a serious issue in abstract interpretation
                 # and static analysis applications, so we use exceptions.
                 try:
-                    if type(op) == ast.Eq: return self.Eq(l, r)
-                    if type(op) == ast.NotEq: return self.NotEq(l, r)
-                    if type(op) == ast.Lt: return self.Lt(l, r)
-                    if type(op) == ast.LtE: return self.LtE(l, r)
-                    if type(op) == ast.Gt: return self.Gt(l, r)
-                    if type(op) == ast.GtE: return self.GtE(l, r)
-                    if type(op) == ast.Is: return self.Is(l, r)
-                    if type(op) == ast.IsNot: return self.IsNot(l, r)
-                    if type(op) == ast.In: return self.In(l, r)
-                    if type(op) == ast.NotIn: return self.NotIn(l, r)
+                    if type(op) == ast.Eq: return self.attempt(self.Eq, l, r, context)
+                    if type(op) == ast.NotEq: return self.attempt(self.NotEq, l, r, context)
+                    if type(op) == ast.Lt: return self.attempt(self.Lt, l, r, context)
+                    if type(op) == ast.LtE: return self.attempt(self.LtE, l, r, context)
+                    if type(op) == ast.Gt: return self.attempt(self.Gt, l, r, context)
+                    if type(op) == ast.GtE: return self.attempt(self.GtE, l, r, context)
+                    if type(op) == ast.Is: return self.attempt(self.Is, l, r, context)
+                    if type(op) == ast.IsNot: return self.attempt(self.IsNot, l, r, context)
+                    if type(op) == ast.In: return self.attempt(self.In, l, r, context)
+                    if type(op) == ast.NotIn: return self.attempt(self.NotIn, l, r, context)
                 except SemanticError: # Attempt catch-all definitions if above failed.
-                    return self.Compare(l, r)
-            else:
-                raise PydrogenError("Pydrogen does not currently support expressions with chained comparison operations.")
+                    return self.attempt(self.Compare, l, r, context)
         elif type(a) == ast.Call:
-            return self.Call(Subtree(a.func), Subtree(a.args, lambda:[self.interpret(e) for e in a.args]))
+            return self.attempt(self.Call, Subtree(a.func), Subtree(a.args, lambda context: self.interprets(a.args, context)), context)
         elif type(a) == ast.Num:
-            return self.Num(Subtree(a.n, lambda:a.n))
+            return self.attempt(self.Num, Subtree(a.n, lambda context: a.n), context)
         elif type(a) == ast.Str:
-            return self.Str(Subtree(a.s, lambda:a.s))
+            return self.attempt(self.Str, Subtree(a.s, lambda context: a.s), context)
         elif type(a) == ast.Bytes:
-            return self.Bytes(Subtree(a.s, lambda:a.s))
+            return self.attempt(self.Bytes, Subtree(a.s, lambda context: a.s), context)
         elif type(a) == ast.NameConstant:
             # Performance is not usually a serious issue in abstract interpretation
             # and static analysis applications, so we use exceptions.
             try:
-                if a.value == True: return self.True_()
-                if a.value == False: return self.False_()
-                if a.value == None: return self.None_()
+                if a.value == True: return self.attempt(self.True_, context)
+                if a.value == False: return self.attempt(self.False_, context)
+                if a.value == None: return self.attempt(self.None_, context)
             except SemanticError: # Attempt catch-all definitions if above failed.
-                return self.NameConstant()
+                return self.attempt(self.NameConstant, context)
         elif type(a) == ast.Name:
-            return self.Name()
+            return self.attempt(self.Name, Subtree(a.id, lambda context: a.id), context)
         elif type(a) == ast.List:
-            return self.List(Subtree(a.elts, lambda:[self.interpret(e) for e in a.elts]))
+            return self.attempt(self.List, Subtree(a.elts, lambda context: self.interprets(a.elts, context)), context)
         elif type(a) == ast.Tuple:
-            return self.Tuple(Subtree(a.elts, lambda:[self.interpret(e) for e in a.elts]))
+            return self.attempt(self.Tuple, Subtree(a.elts, lambda context: self.interprets(a.elts, context)), context)
         else:
             raise PydrogenError("Pydrogen does not currently support nodes of this type: " + ast.dump(a))
 
-    def Statements(self, ss): raise SemanticError("Statements") # Special case.
+    def Statements(self, ss, context = None): raise SemanticError("Statements (Pydrogen-specific case)") # Special case.
 
-    def Module(self, ss): raise SemanticError("Module")
-    def FunctionDef(self, ss): raise SemanticError("FunctionDef")
-    def Return(self, e): raise SemanticError("Return")
-    def Assign(self, targets, e): raise SemanticError("Assign")
-    def For(self, target, iter, ss, orelse): raise SemanticError("For")
-    def While(self, test, ss, orelse): raise SemanticError("While")
-    def If(self, test, ss, orelse): raise SemanticError("If")
+    def Module(self, ss, context = None): raise SemanticError("Module")
+    def FunctionDef(self, ss, context = None): raise SemanticError("FunctionDef")
+    def Return(self, e, context = None): raise SemanticError("Return")
+    def Assign(self, targets, e, context = None): raise SemanticError("Assign")
+    def For(self, target, iter, ss, orelse, context = None): raise SemanticError("For")
+    def While(self, test, ss, orelse, context = None): raise SemanticError("While")
+    def If(self, test, ss, orelse, context = None): raise SemanticError("If")
+    def Pass(self, context = None): raise SemanticError("Pass")
+    def Break(self, context = None): raise SemanticError("Break")
+    def Continue(self, context = None): raise SemanticError("Continue")
 
-    def BoolOp(self, es): raise SemanticError("BoolOp")
-    def BinOp(self, e1, e2): raise SemanticError("BinOp")
-    def UnaryOp(self, e): raise SemanticError("UnaryOp")
-    def Set(self, es): raise SemanticError("Set")
-    def Compare(self, e1, e2): raise SemanticError("Compare")
-    def Call(self, func, args): raise SemanticError("Call")
-    def Num(self, n): raise SemanticError("Num")
-    def Str(self, s): raise SemanticError("Str")
-    def Bytes(self, b): raise SemanticError("Bytes")
-    def NameConstant(self): raise SemanticError("NameConstant")
-    def Name(self): raise SemanticError("Name")
-    def List(self, es): raise SemanticError("List")
-    def Tuple(self, es): raise SemanticError("Tuple")
+    def BoolOp(self, es, context = None): raise SemanticError("BoolOp")
+    def BinOp(self, e1, e2, context = None): raise SemanticError("BinOp")
+    def UnaryOp(self, e, context = None): raise SemanticError("UnaryOp")
+    def Set(self, es, context = None): raise SemanticError("Set")
+    def Compare(self, e1, e2, context = None): raise SemanticError("Compare")
+    def Call(self, func, args, context = None): raise SemanticError("Call")
+    def Num(self, n, context = None): raise SemanticError("Num")
+    def Str(self, s, context = None): raise SemanticError("Str")
+    def Bytes(self, b, context = None): raise SemanticError("Bytes")
+    def NameConstant(self, context = None): raise SemanticError("NameConstant")
+    def Name(self, id, context = None): raise SemanticError("Name")
+    def List(self, es, context = None): raise SemanticError("List")
+    def Tuple(self, es, context = None): raise SemanticError("Tuple")
 
-    def And(self, es): raise SemanticError("And")
-    def Or(self, es): raise SemanticError("Or")
-    def Add(self, e1, e2): raise SemanticError("Add")
-    def Sub(self, e1, e2): raise SemanticError("Sub")
-    def Mult(self, e1, e2): raise SemanticError("Mult")
-    def MatMult(self, e1, e2): raise SemanticError("MatMult")
-    def Div(self, e1, e2): raise SemanticError("Div")
-    def Mod(self, e1, e2): raise SemanticError("Mod")
-    def Pow(self, e1, e2): raise SemanticError("Pow")
-    def LShift(self, e1, e2): raise SemanticError("LShift")
-    def RShift(self, e1, e2): raise SemanticError("RShift")
-    def BitOr(self, e1, e2): raise SemanticError("BitOr")
-    def BitXor(self, e1, e2): raise SemanticError("BixXor")
-    def BitAnd(self, e1, e2): raise SemanticError("BitAnd")
-    def FloorDiv(self, e1, e2): raise SemanticError("FloorDiv")
-    def Invert(self, e): raise SemanticError("Invert")
-    def Not(self, e): raise SemanticError("Not")
-    def UAdd(self, e): raise SemanticError("UAdd")
-    def USub(self, e): raise SemanticError("USub")
+    def And(self, es, context = None): raise SemanticError("And")
+    def Or(self, es, context = None): raise SemanticError("Or")
+    def Add(self, e1, e2, context = None): raise SemanticError("Add")
+    def Sub(self, e1, e2, context = None): raise SemanticError("Sub")
+    def Mult(self, e1, e2, context = None): raise SemanticError("Mult")
+    def MatMult(self, e1, e2, context = None): raise SemanticError("MatMult")
+    def Div(self, e1, e2, context = None): raise SemanticError("Div")
+    def Mod(self, e1, e2, context = None): raise SemanticError("Mod")
+    def Pow(self, e1, e2, context = None): raise SemanticError("Pow")
+    def LShift(self, e1, e2, context = None): raise SemanticError("LShift")
+    def RShift(self, e1, e2, context = None): raise SemanticError("RShift")
+    def BitOr(self, e1, e2, context = None): raise SemanticError("BitOr")
+    def BitXor(self, e1, e2, context = None): raise SemanticError("BixXor")
+    def BitAnd(self, e1, e2, context = None): raise SemanticError("BitAnd")
+    def FloorDiv(self, e1, e2, context = None): raise SemanticError("FloorDiv")
+    def Invert(self, e, context = None): raise SemanticError("Invert")
+    def Not(self, e, context = None): raise SemanticError("Not")
+    def UAdd(self, e, context = None): raise SemanticError("UAdd")
+    def USub(self, e, context = None): raise SemanticError("USub")
 
-    def Eq(self, e1, e2): raise SemanticError("Eq")
-    def NotEq(self, e1, e2): raise SemanticError("NotEq")
-    def Lt(self, e1, e2): raise SemanticError("Lt")
-    def LtE(self, e1, e2): raise SemanticError("LtE")
-    def Gt(self, e1, e2): raise SemanticError("Gt")
-    def GtE(self, e1, e2): raise SemanticError("GtE")
-    def Is(self, e1, e2): raise SemanticError("Is")
-    def IsNot(self, e1, e2): raise SemanticError("IsNot")
-    def In(self, e1, e2): raise SemanticError("In")
-    def NotIn(self, e1, e2): raise SemanticError("NotIn")
+    def Eq(self, e1, e2, context = None): raise SemanticError("Eq")
+    def NotEq(self, e1, e2, context = None): raise SemanticError("NotEq")
+    def Lt(self, e1, e2, context = None): raise SemanticError("Lt")
+    def LtE(self, e1, e2, context = None): raise SemanticError("LtE")
+    def Gt(self, e1, e2, context = None): raise SemanticError("Gt")
+    def GtE(self, e1, e2, context = None): raise SemanticError("GtE")
+    def Is(self, e1, e2, context = None): raise SemanticError("Is")
+    def IsNot(self, e1, e2, context = None): raise SemanticError("IsNot")
+    def In(self, e1, e2, context = None): raise SemanticError("In")
+    def NotIn(self, e1, e2, context = None): raise SemanticError("NotIn")
 
-    def True_(self): raise SemanticError("True")
-    def False_(self): raise SemanticError("False")
-    def None_(self): raise SemanticError("None")
+    def True_(self, context = None): raise SemanticError("True")
+    def False_(self, context = None): raise SemanticError("False")
+    def None_(self, context = None): raise SemanticError("None")
 
 # A simple example extension containing the typical definitions,
 # such as passing the recursive result up through 'Module' and
 # 'FunctionDef' nodes.
 class Typical(Pydrogen):
-    def Module(self, ss): return ss.post()
-    def FunctionDef(self, ss): return ss.post()
-    def Return(self, e): return e.post()
+    def Module(self, ss, context): return ss.post(context)
+    def FunctionDef(self, ss, context): return ss.post(context)
+    def Return(self, e, context): return e.post(context)
 
 # A simple example extension for computing the size of the abstract
 # syntax tree.

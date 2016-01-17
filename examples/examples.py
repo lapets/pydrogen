@@ -17,7 +17,7 @@ import pydrogen
 def add(x, y):
     return x + y
 
-print("The size of the function body is " + str(add.ASTSize) + ".")
+print("The size of the function body of add() is " + str(add.ASTSize) + ".")
 
 #####################################################################
 ## Defining a simple type checking algorithm.
@@ -46,13 +46,13 @@ class Ty(pydrogen.Pydrogen):
 def correct():
     return -1 + 2 - 3 * 4
 
-print("The type of 'correct' is " + str(correct.Ty) + ".")
+print("The type of correct() is " + str(correct.Ty) + ".")
 
 @Ty
 def incorrect():
     return 123 and False
 
-print("The type of 'incorrect' is " + str(incorrect.Ty) + ".")
+print("The type of incorrect() is " + str(incorrect.Ty) + ".")
 
 #####################################################################
 ## Defining a running time approximation algorithm for a small subset
@@ -79,6 +79,34 @@ def example():
         print(True and False)
         print(123 + 456)
 
-print("The approximate running time of example is " + str(example.Time) + ".")
+print("The approximate running time of example() is " + str(example.Time) + ".")
+
+#####################################################################
+## Using a context or environment.
+##
+
+class Ty2(pydrogen.Typical):
+    def Statements(self, ss, env):
+        (tys, env) = ss.post(env)
+        return tys[-1]
+    def Assign(self, targets, value, env):
+        var = targets.pre()[0].id # Only single variable assignment.
+        envNew = env.copy()
+        envNew[var] = value.post(env)
+        return ('Void', envNew)
+    def Name(self, x, env):
+        return env[x.pre()] if x.pre() in env else 'Error'
+    def Num(self, n, env):
+        return 'Int'
+    def Add(self, e1, e2, env):
+        return 'Int' if {e1.post(env), e2.post(env)} == {'Int'} else 'Error'
+
+@Ty2
+def example2():
+    y = 0
+    x = 1 + 2 + 3
+    return x + y
+
+print("The type of example2() is " + str(example2.Ty2) + ".")
 
 ##eof
