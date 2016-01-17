@@ -57,9 +57,16 @@ body #footer a:hover { text-decoration:underline; }
           <pre><code>
 pip install pydrogen
           </code></pre>
+          Note that this library is only compatible (i.e., tested) with Python 3. It depends on the <a href="http://docs.python.org/3/library/inspect.html"><code>inspect</code></a> and <a href="http://docs.python.org/3/library/ast.html"><code>ast</code></a> modules.
         </div>
         <div class="section"><h2>Examples</h2>
-          Defining a simple type checking algorithm.
+          A user would normally import the module in the usual way.
+          <pre><code class="py">
+import pydrogen
+          </code></pre>
+          To create an alternative interpretation for Python syntax, it is only necessary to extend the <code>Pydrogen</code> class and to provide definitions for those functions that handle the abstract syntax nodes that are of interest. The complete Python abstract syntax can be found in the documentation of the Python <a href="http://docs.python.org/3/library/ast.html"><code>ast</code> module</a>.
+          <br/><br/>
+          Below, we define a simple type checking algorithm.
           <pre><code class="py">
 class Ty(pydrogen.Pydrogen):
     def Statements(self, ss): return ss.post()[-1] # Last statement.
@@ -78,7 +85,7 @@ class Ty(pydrogen.Pydrogen):
     def Mult(self, e1, e2): return 'Int' if e1.post() == 'Int' and e2.post() == 'Int' else 'Error'
     def USub(self, e): return 'Int' if e.post() == 'Int' else 'Error'
           </code></pre>
-          Given the above definition, we can use <code>@Ty</code> as a decorator:
+          Given the above definition, we can use <code>@Ty</code> as a decorator on any function. This will make it possible to query that function's type at a later point using the name of the class extension defined above.
           <pre><code class="py">
 @Ty
 def correct():
