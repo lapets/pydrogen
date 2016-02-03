@@ -123,7 +123,7 @@ def example():
 
 print("The approximate running time of example is " + str(example.Time) + ".")
           </code></pre>
-          The example below illustrates how the optional context parameter can be used to create environments. Note that we because only the statement handlers return <code>(env, ty)</code> tuples, we only need to handle such tuple results when they appear (while not worrying about them when dealing with results from expression handlers, which do not return the environment).
+          The example below illustrates how the optional context parameter can be used to create environments. Note that because only the statement handlers return <code>(env, ty)</code> tuples, we only need to handle such tuple results when they appear (while not worrying about them when dealing with results from expression handlers, which do not return an environment).
           <pre><code class="py">
 class Ty2(pydrogen.Typical):
     def Statements(self, ss, env):
