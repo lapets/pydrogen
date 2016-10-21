@@ -45,10 +45,16 @@ class SemanticError(Exception):
 # function definition.
 class Function():
     def __init__(self, func, cls, interpretation = None):
-        self._func = func
+        # we want to create the Function object with the original function to
+        # allow any other stacked interpretations to access it -- this means the
+        # interpretations will be independent of each other, but the final
+        # returned Function will have access to all the interpretations
         self._interpretations = {}
         if type(func) == Function:
-            self._interpretations = {k:func._interpretations[k] for k in func._interpretations}
+            self._interpretations.update(func._interpretations)
+            self._func = func._func
+        else:
+            self._func = func
         self._interpretations[cls.__class__.__name__] = interpretation
     def __getattr__(self, attr):
         if (attr in self._interpretations): # Alternative interpretations.
