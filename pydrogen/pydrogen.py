@@ -348,6 +348,20 @@ class Pydrogen():
                     Subtree(a.elts, lambda context: self.interprets(a.elts, context)),
                     context)
 
+        elif type(a) == ast.ListComp:
+            # a list comprehension contains elt, the element being generated,
+            # and generators, a list of comprehensions -- (target, iter, ifs)
+            # tuples -- that generate the final list of elts
+            iter_node = lambda iter: Subtree(iter, lambda context: self.interpret(iter, context))
+            if_node = lambda i: Subtree(i, lambda context: self.interpret(i, context))
+            comp = lambda g: (Subtree(g.target), iter_node(g.iter), [if_node(i) for i in g.ifs])
+            generators = [comp(g) for g in a.generators]
+            return self.attempt(
+                    self.ListComp,
+                    Subtree(a.elt, lambda context: self.interpret(a.elt, context)),
+                    generators,
+                    context)
+
         else:
             raise PydrogenError("Pydrogen does not currently support nodes of this type: " + ast.dump(a))
 
@@ -364,6 +378,7 @@ class Pydrogen():
     def Pass(self, context = None): raise SemanticError("Pass")
     def Break(self, context = None): raise SemanticError("Break")
     def Continue(self, context = None): raise SemanticError("Continue")
+    def ListComp(self, elt, generators, context = None): raise SemanticError("ListComp")
 
     def BoolOp(self, es, context = None): raise SemanticError("BoolOp")
     def BinOp(self, e1, e2, context = None): raise SemanticError("BinOp")
