@@ -103,7 +103,7 @@ class Subtree():
 # definition (https://docs.python.org/3/library/ast.html), with a
 # few deviations to accommodate the usage model for this library.
 class Pydrogen():
-    def __new__(cls, arg = None):
+    def __new__(cls, arg = None, **kwargs):
         # Either create a new object of this class in order to
         # process functions in the future (if no function is
         # supplied at the time of creation), or immediately
@@ -112,15 +112,19 @@ class Pydrogen():
         # Abstract syntax tree arguments are simply interpreted
         # according to the class.
         if arg is None:
-            return object.__new__(cls)
+            # if class is instantiated with no arguments or used as a decorator
+            # with keyword arguments, arg will be None: return a function that
+            # expects a function to process.
+            return lambda func: cls(arg=func, **kwargs)
         elif hasattr(arg, '__call__'): # Is a function.
-            return object.__new__(cls).process(arg)
+            return object.__new__(cls).process(arg, context=kwargs)
         else:
-            return object.__new__(cls).interpret(arg)
+            return object.__new__(cls).interpret(arg, context=kwargs)
 
-    def process(self, func):
+    def process(self, func, context):
         original = func._func if type(func) == Function else func
-        return Function(func, self, self.interpret(ast.parse(inspect.getsource(original)), {}))
+        return Function(func, self,
+                self.interpret(ast.parse(inspect.getsource(original)), context))
 
     # Attempt running the function with only the number of arguments
     # that it can handle. This allows users to completely ignore the

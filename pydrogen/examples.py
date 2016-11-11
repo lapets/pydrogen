@@ -1,34 +1,57 @@
+import ast
+import inspect
 import pydrogen
 from sympy import O, symbols, oo
 
 class Complexity(pydrogen.Typical):
     """ Complexity approximation for a small subset of Python. """
-
-    # n represents the size of the input to a function
-    n = symbols("n")
-
     # some complexity classes using sympy's O notation
-    constant = O(1, (n, oo))
-    linear = O(n, (n, oo))
+    linear = lambda _, n: O(n, (n, oo))
 
     # store the complexity of some known functions for added expressibility
-    functions = {"len": constant}
+    functions = {}
 
-    def Statements(self, ss): return sum(ss.post())
-    def Assign(self, targets, e): return self.constant + e.post()
+    def process(self, func, context):
+        original = func._func if type(func) == pydrogen.Function else func
+        # process size of each variable input
+        syms = []
+        for var, symbol in context.items():
+            if type(symbol) == str:
+                symbol = symbols(symbol)
+                context[var] = symbol
+            syms.append((symbol, oo))
+
+        # define what counts as constant, add len to function mapping
+        self.constant = O(1, *syms)
+        self.functions["len"] = self.constant
+
+        return pydrogen.Function(func, self,
+                self.interpret(ast.parse(inspect.getsource(original)), context))
+
+
+    def Statements(self, ss, context=None): return sum(ss.post(context)[0])
+    def Assign(self, targets, e, context=None): return self.constant + e.post(context)
     # assume whatever is being iterated over has size n
-    def For(self, target, itr, ss, orelse): return self.linear * ss.post()
-    def BoolOp(self, es): return self.constant + sum(es.post())
-    def BinOp(self, e1, e2): return self.constant + e1.post() + e2.post()
-    def Call(self, func, args):
+    def For(self, target, itr, ss, orelse, context=None):
+        itr = itr.pre().id
+        if itr in context:
+            loop = self.linear(context[itr])
+        else:
+            loop = self.constant
+        return loop * ss.post(context)
+    def BoolOp(self, es, context=None): return self.constant + sum(es.post(context))
+    def BinOp(self, e1, e2, context): return self.constant + e1.post(context) + e2.post(context)
+    def Call(self, func, args, context=None):
         func = func.pre()
-        return self.functions[func.id] if func.id in self.functions else Complexity(func)
-    def Num(self): return 0
+        if context is None:
+            context = {}
+        return self.functions[func.id] if func.id in self.functions else Complexity(func, **context)
+    def Num(self, n, context=None): return 0
     def NameConstant(self): return 0
-    def Name(self): return 0
+    def Name(self, id, context=None): return 0
     # def List(self, elts): return O(self.n, (self.n,oo))
 
-@Complexity
+@Complexity(items='n')
 def average(items):
     total = 0
     for item in items:
