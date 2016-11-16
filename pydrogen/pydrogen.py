@@ -123,6 +123,10 @@ class Pydrogen():
 
     def process(self, func, context):
         original = func._func if type(func) == Function else func
+        # allow subclasses to specify a preprocessing function to populate the
+        # context
+        if hasattr(self, 'preprocess'):
+            self.preprocess(context)
         return Function(func, self,
                 self.interpret(ast.parse(inspect.getsource(original)), context))
 

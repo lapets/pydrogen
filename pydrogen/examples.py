@@ -1,19 +1,21 @@
 import ast
 import inspect
 import pydrogen
+import sympy
 from sympy import O, symbols, oo
 
 class Complexity(pydrogen.Typical):
     """ Complexity approximation for a small subset of Python. """
     # some complexity classes using sympy's O notation
-    linear = lambda _, n: O(n, (n, oo))
+    poly = lambda _, n, power: O(n**power, (n, oo))
+    log = lambda _, n: O(sympy.log(n), (n,oo))
+    exp = lambda _, n, base: O(base**n, (n,oo))
+    constant = O(1)
 
     # store the complexity of some known functions for added expressibility
-    functions = {}
+    functions = {'len': constant}
 
-    def process(self, func, context):
-        original = func._func if type(func) == pydrogen.Function else func
-        # process size of each variable input
+    def preprocess(self, context):
         syms = []
         for var, symbol in context.items():
             if type(symbol) == str:
@@ -21,24 +23,18 @@ class Complexity(pydrogen.Typical):
                 context[var] = symbol
             syms.append((symbol, oo))
 
-        # define what counts as constant, add len to function mapping
-        self.constant = O(1, *syms)
-        self.functions["len"] = self.constant
-
-        return pydrogen.Function(func, self,
-                self.interpret(ast.parse(inspect.getsource(original)), context))
-
-
     def Statements(self, ss, context=None): return sum(ss.post(context)[0])
     def Assign(self, targets, e, context=None): return self.constant + e.post(context)
-    # assume whatever is being iterated over has size n
+    # if iterable maps to a symbol, use it. otherwise, assume it is constant.
     def For(self, target, itr, ss, orelse, context=None):
         itr = itr.pre().id
         if itr in context:
-            loop = self.linear(context[itr])
+            loops = self.poly(context[itr], 1)
         else:
-            loop = self.constant
-        return loop * ss.post(context)
+            loops = self.constant
+        work = ss.post(context)
+        # sympy raises error if you try to do O(1) * O(x, (x,oo)) for e.g.
+        return loops * work if work.contains(loops) else work * loops
     def BoolOp(self, es, context=None): return self.constant + sum(es.post(context))
     def BinOp(self, e1, e2, context): return self.constant + e1.post(context) + e2.post(context)
     def Call(self, func, args, context=None):
@@ -49,7 +45,6 @@ class Complexity(pydrogen.Typical):
     def Num(self, n, context=None): return 0
     def NameConstant(self): return 0
     def Name(self, id, context=None): return 0
-    # def List(self, elts): return O(self.n, (self.n,oo))
 
 @Complexity(items='n')
 def average(items):
