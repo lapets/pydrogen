@@ -3,7 +3,7 @@ import inspect
 import pydrogen
 import sympy
 from sympy import O, symbols, oo
-
+import sys
 
 # some complexity classes using sympy's O notation
 linear = lambda n: O(n, (n, oo))
@@ -16,7 +16,9 @@ class Complexity(pydrogen.Typical):
     """ Complexity approximation for a small subset of Python. """
 
     # store the complexity of some known functions for added expressibility
-    functions = {'len': constant}
+    # technically, range in python 3 has constant complexity since it returns a
+    # generator, but within the context of loops we say it is linear
+    functions = {'len': constant, 'print': constant, 'range': linear}
 
     def preprocess(self, context):
         syms = []
@@ -74,7 +76,12 @@ class Complexity(pydrogen.Typical):
             if symbol or self.functions[func.id] == constant:
                 return self.functions[func.id](symbol)
         # otherwise, attempt to interpret the function directly
-        return Complexity(func, **context)
+        for _, module in sys.modules.items():
+            scope = module.__dict__
+            if func.id in scope and callable(scope[func.id]):
+                func = scope[func.id]
+                return Complexity(func, **context, functions=self.functions).Complexity
+        raise pydrogen.PydrogenError("failed to interpret {}".format(func.id))
     def Num(self, n, context=None): return 0
     def NameConstant(self): return 0
     def Name(self, id, context=None): return 0
