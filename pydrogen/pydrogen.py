@@ -45,10 +45,16 @@ class SemanticError(Exception):
 # function definition.
 class Function():
     def __init__(self, func, cls, interpretation = None):
-        self._func = func
+        # we want to create the Function object with the original function to
+        # allow any other stacked interpretations to access it -- this means the
+        # interpretations will be independent of each other, but the final
+        # returned Function will have access to all the interpretations
         self._interpretations = {}
         if type(func) == Function:
-            self._interpretations = {k:func._interpretations[k] for k in func._interpretations}
+            self._interpretations.update(func._interpretations)
+            self._func = func._func
+        else:
+            self._func = func
         self._interpretations[cls.__class__.__name__] = interpretation
     def __getattr__(self, attr):
         if (attr in self._interpretations): # Alternative interpretations.
@@ -97,7 +103,7 @@ class Subtree():
 # definition (https://docs.python.org/3/library/ast.html), with a
 # few deviations to accommodate the usage model for this library.
 class Pydrogen():
-    def __new__(cls, arg = None):
+    def __new__(cls, arg = None, **kwargs):
         # Either create a new object of this class in order to
         # process functions in the future (if no function is
         # supplied at the time of creation), or immediately
@@ -106,15 +112,23 @@ class Pydrogen():
         # Abstract syntax tree arguments are simply interpreted
         # according to the class.
         if arg is None:
-            return object.__new__(cls)
+            # if class is instantiated with no arguments or used as a decorator
+            # with keyword arguments, arg will be None: return a function that
+            # expects a function to process.
+            return lambda func: cls(arg=func, **kwargs)
         elif hasattr(arg, '__call__'): # Is a function.
-            return object.__new__(cls).process(arg)
+            return object.__new__(cls).process(arg, context=kwargs)
         else:
-            return object.__new__(cls).interpret(arg)
+            return object.__new__(cls).interpret(arg, context=kwargs)
 
-    def process(self, func):
+    def process(self, func, context):
         original = func._func if type(func) == Function else func
-        return Function(func, self, self.interpret(ast.parse(inspect.getsource(original)), {}))
+        # allow subclasses to specify a preprocessing function to populate the
+        # context
+        if hasattr(self, 'preprocess'):
+            self.preprocess(context)
+        return Function(func, self,
+                self.interpret(ast.parse(inspect.getsource(original)), context))
 
     # Attempt running the function with only the number of arguments
     # that it can handle. This allows users to completely ignore the
@@ -143,40 +157,90 @@ class Pydrogen():
     # call without a context.
     def interpret(self, a, context = None):
         if type(a) == ast.Module:
-            body = Subtree(a.body, lambda context: self.attempt(self.Statements, Subtree(a.body, lambda context: self.interprets(a.body, context)), context))
+            body = Subtree(
+                    a.body,
+                    lambda context: self.attempt(
+                        self.Statements,
+                        Subtree(a.body, lambda context: self.interprets(a.body, context)),
+                        context))
             return self.attempt(self.Module, body, context)
+
         elif type(a) == ast.FunctionDef:
-            body = Subtree(a.body, lambda context: self.attempt(self.Statements, Subtree(a.body, lambda context: self.interprets(a.body, context)), context))
+            body = Subtree(
+                    a.body,
+                    lambda context: self.attempt(
+                        self.Statements,
+                        Subtree(a.body, lambda context: self.interprets(a.body, context)),
+                        context))
             return self.attempt(self.FunctionDef, body, context)
+
         elif type(a) == ast.Return:
             value = Subtree(a.value, lambda context: self.interpret(a.value, context))
             return self.attempt(self.FunctionDef, value, context)
+
         elif type(a) == ast.Assign:
             value = Subtree(a.value, lambda context: self.interpret(a.value, context))
             return self.attempt(self.Assign, Subtree(a.targets), value, context)
+
         elif type(a) == ast.For:
             iter = Subtree(a.iter, lambda context: self.interpret(a.iter, context))
-            body = Subtree(a.body, lambda context: self.attempt(self.Statements, Subtree(a.body, lambda context: self.interprets(a.body, context)), context))
-            orelse = Subtree(a.orelse, lambda context: self.attempt(self.Statements, Subtree(a.orelse, lambda context: self.interprets(a.orelse, context)), context))
+            body = Subtree(
+                    a.body,
+                    lambda context: self.attempt(
+                        self.Statements,
+                        Subtree(a.body, lambda context: self.interprets(a.body, context)),
+                        context))
+            orelse = Subtree(
+                    a.orelse,
+                    lambda context: self.attempt(
+                        self.Statements,
+                        Subtree(a.orelse, lambda context: self.interprets(a.orelse, context)),
+                        context))
             return self.attempt(self.For, Subtree(a.target), iter, body, orelse, context)
+
         elif type(a) == ast.While:
             test = Subtree(a.test, lambda context: self.interpret(a.test, context))
-            body = Subtree(a.body, lambda context: self.attempt(self.Statements, Subtree(a.body, lambda context: self.interprets(a.body, context)), context))
-            orelse = Subtree(a.orelse, lambda context: self.attempt(self.Statements, Subtree(a.orelse, lambda context: self.interprets(a.orelse, context)), context))
+            body = Subtree(
+                    a.body,
+                    lambda context: self.attempt(
+                        self.Statements,
+                        Subtree(a.body, lambda context: self.interprets(a.body, context)),
+                        context))
+            orelse = Subtree(
+                    a.orelse,
+                    lambda context: self.attempt(
+                        self.Statements,
+                        Subtree(a.orelse, lambda context: self.interprets(a.orelse, context)),
+                        context))
             return self.attempt(self.While, test, body, orelse, context)
+
         elif type(a) == ast.If:
             test = Subtree(a.test, lambda context: self.interpret(a.test, context))
-            body = Subtree(a.body, lambda context: self.attempt(self.Statements, Subtree(a.body, lambda context: self.interprets(a.body, context)), context))
-            orelse = Subtree(a.orelse, lambda context: self.attempt(self.Statements, Subtree(a.orelse, lambda context: self.interprets(a.orelse, context)), context))
+            body = Subtree(
+                    a.body,
+                    lambda context: self.attempt(
+                        self.Statements, Subtree(a.body, lambda context: self.interprets(a.body, context)),
+                        context))
+            orelse = Subtree(
+                    a.orelse,
+                    lambda context: self.attempt(
+                        self.Statements,
+                        Subtree(a.orelse, lambda context: self.interprets(a.orelse, context)),
+                        context))
             return self.attempt(self.If, test, body, orelse, context)
+
         elif type(a) == ast.Expr:
             return self.interpret(a.value, context)
+
         elif type(a) == ast.Pass:
             return self.attempt(self.Pass, context)
+
         elif type(a) == ast.Break:
             return self.attempt(self.Break, context)
+
         elif type(a) == ast.Continue:
             return self.attempt(self.Continue, context)
+
         elif type(a) == ast.BoolOp:
             values = Subtree(a.values, lambda context: self.interprets(a.values, context))
             # Performance is not usually a serious issue in abstract interpretation
@@ -186,6 +250,7 @@ class Pydrogen():
                 if type(a.op) == ast.Or:  return self.attempt(self.Or, values, context)
             except SemanticError: # Attempt catch-all definitions if above failed.
                 return self.attempt(self.BoolOp, values, context)
+
         elif type(a) == ast.BinOp:
             l = Subtree(a.left, lambda context: self.interpret(a.left, context))
             r = Subtree(a.right, lambda context: self.interpret(a.right, context))
@@ -207,6 +272,7 @@ class Pydrogen():
                 if type(a.op) == ast.FloorDiv: return self.attempt(self.FloorDiv, l, r, context)
             except SemanticError: # Attempt catch-all definitions if above failed.
                 return self.attempt(self.BinOp, l, r, context)
+
         elif type(a) == ast.UnaryOp:
             operand = Subtree(a.operand, lambda context: self.interpret(a.operand, context))
             # Performance is not usually a serious issue in abstract interpretation
@@ -218,8 +284,13 @@ class Pydrogen():
                 if type(a.op) == ast.USub: return self.attempt(self.USub, operand, context)
             except SemanticError: # Attempt catch-all definitions if above failed.
                 return self.attempt(self.UnaryOp, operand, context)
+
         elif type(a) == ast.Set:
-            return self.attempt(self.Set, Subtree(a.elts, lambda context: self.interprets(a.elts, context)), context)
+            return self.attempt(
+                    self.Set,
+                    Subtree(a.elts, lambda context: self.interprets(a.elts, context)),
+                    context)
+
         elif type(a) == ast.Compare:
             if not(len(a.ops) == 1 and len(a.comparators) == 1):
                 raise PydrogenError("Pydrogen does not currently support expressions with chained comparison operations.")
@@ -243,14 +314,23 @@ class Pydrogen():
                     if type(op) == ast.NotIn: return self.attempt(self.NotIn, l, r, context)
                 except SemanticError: # Attempt catch-all definitions if above failed.
                     return self.attempt(self.Compare, l, r, context)
+
         elif type(a) == ast.Call:
-            return self.attempt(self.Call, Subtree(a.func), Subtree(a.args, lambda context: self.interprets(a.args, context)), context)
+            return self.attempt(
+                    self.Call,
+                    Subtree(a.func),
+                    Subtree(a.args, lambda context: self.interprets(a.args, context)),
+                    context)
+
         elif type(a) == ast.Num:
             return self.attempt(self.Num, Subtree(a.n, lambda context: a.n), context)
+
         elif type(a) == ast.Str:
             return self.attempt(self.Str, Subtree(a.s, lambda context: a.s), context)
+
         elif type(a) == ast.Bytes:
             return self.attempt(self.Bytes, Subtree(a.s, lambda context: a.s), context)
+
         elif type(a) == ast.NameConstant:
             # Performance is not usually a serious issue in abstract interpretation
             # and static analysis applications, so we use exceptions.
@@ -260,16 +340,27 @@ class Pydrogen():
                 if a.value == None: return self.attempt(self.None_, context)
             except SemanticError: # Attempt catch-all definitions if above failed.
                 return self.attempt(self.NameConstant, context)
+
         elif type(a) == ast.Name:
             return self.attempt(self.Name, Subtree(a.id, lambda context: a.id), context)
+
         elif type(a) == ast.List:
-            return self.attempt(self.List, Subtree(a.elts, lambda context: self.interprets(a.elts, context)), context)
+            return self.attempt(
+                    self.List,
+                    Subtree(a.elts, lambda context: self.interprets(a.elts, context)),
+                    context)
+
         elif type(a) == ast.Tuple:
-            return self.attempt(self.Tuple, Subtree(a.elts, lambda context: self.interprets(a.elts, context)), context)
+            return self.attempt(
+                    self.Tuple,
+                    Subtree(a.elts, lambda context: self.interprets(a.elts, context)),
+                    context)
+
         else:
             raise PydrogenError("Pydrogen does not currently support nodes of this type: " + ast.dump(a))
 
-    def Statements(self, ss, context = None): raise SemanticError("Statements (Pydrogen-specific case)") # Special case.
+    # Special case.
+    def Statements(self, ss, context = None): raise SemanticError("Statements (Pydrogen-specific case)")
 
     def Module(self, ss, context = None): raise SemanticError("Module")
     def FunctionDef(self, ss, context = None): raise SemanticError("FunctionDef")

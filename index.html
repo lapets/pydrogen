@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<html lang="en">
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta content="all" name="robots" />
     <title>pydrogen</title>
-    <link rel="shortcut icon"type="image/x-icon" href="data:image/x-icon;,"><!-- Suppress browser favicon.ico request. -->
+    <link rel="shortcut icon" type="image/x-icon" href="data:image/x-icon;base64,iVBORw0KGgo="><!-- Suppress browser favicon.ico request. -->
     <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.1.0/styles/vs.min.css">
     <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.1.0/highlight.min.js"></script>
     <link rel="stylesheet" type="text/css" href="//fonts.googleapis.com/css?family=Open+Sans">
@@ -123,7 +124,7 @@ def example():
 
 print("The approximate running time of example is " + str(example.Time) + ".")
           </code></pre>
-          The example below illustrates how the optional context parameter can be used to create environments. Note that we because only the statement handlers return <code>(env, ty)</code> tuples, we only need to handle such tuple results when they appear (while not worrying about them when dealing with results from expression handlers, which do not return the environment).
+          The example below illustrates how the optional context parameter can be used to create environments. Note that because only the statement handlers return <code>(env, ty)</code> tuples, we only need to handle such tuple results when they appear (while not worrying about them when dealing with results from expression handlers, which do not return an environment).
           <pre><code class="py">
 class Ty2(pydrogen.Typical):
     def Statements(self, ss, env):
